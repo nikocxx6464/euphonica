@@ -484,7 +484,7 @@ impl MpdWrapper {
                 self.handle_common_mpd_error(&error, or);
             }
             AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name, songs) => {
-                unimplemented!()
+                self.on_songs_downloaded("dynamic-playlist-songs-downloaded", Some(name), songs)
             }
         }
         glib::ControlFlow::Continue
