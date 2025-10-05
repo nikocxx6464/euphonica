@@ -113,5 +113,6 @@
     <file preprocess="xml-stripblanks" alias="recent-symbolic.svg">gtk/icons/recent-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-at-line-down-symbolic.svg">gtk/icons/arrow-pointing-at-line-down-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
   </gresource>
 </gresources>

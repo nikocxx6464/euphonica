@@ -19,6 +19,9 @@ mod playlist_content_view;
 mod playlist_view;
 mod playlist_row;
 
+mod dynamic_playlist_editor_view;
+mod rule_button;
+
 // Common stuff shared between views
 mod add_to_playlist;
 mod generic_row;

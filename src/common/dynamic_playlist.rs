@@ -9,6 +9,7 @@ pub enum StickerOperation {
     GreaterThan,
     Contains,
     StartsWith,
+    IntEquals,
     IntLessThan,
     IntGreaterThan
 }
@@ -20,6 +21,7 @@ impl StickerOperation {
             Self::GreaterThan => ">",
             Self::Contains => "contains",
             Self::StartsWith => "starts_with",
+            Self::IntEquals => "eq",
             Self::IntLessThan => "lt",
             Self::IntGreaterThan => "gt"
         }
@@ -28,12 +30,12 @@ impl StickerOperation {
 
 /// Flattened, no-lifetime version of mpd::search::Term * mpd::search::Operation,
 /// only containing supported tag types.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum QueryLhs {
     File,    // matches full song URI, always ==
     Base,    // from this directory
-    LastMod, // since (>=)
     // Tags
+    LastMod,
     Any(TagOperation),  // will match any tag
     Album(TagOperation),
     AlbumArtist(TagOperation),
@@ -41,10 +43,9 @@ pub enum QueryLhs {
     // more to come
 }
 
-impl QueryLhs {
+impl<'a, 'b: 'a> QueryLhs {
     /// Consume & add self into an existing mpd::search::Query.
-    pub fn add_to_query(self, query: &mut Query, rhs: String) {
-        let rhs = Cow::Owned(rhs);
+    pub fn add_to_query<V: 'b + Into<Cow<'b, str>>>(self, query: &mut Query<'a>, rhs: V) {
         match self {
             Self::File => {
                 query.and(Term::File, rhs);
@@ -71,7 +72,7 @@ impl QueryLhs {
     }
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub enum Rule {
     /// LHS (key), operator, RHS (always a string)
     Sticker(String, StickerOperation, String),
@@ -79,7 +80,10 @@ pub enum Rule {
     /// Optional LHS (tag or MPD term as string), MPD operation, right hand
     /// side (unary ops use this). We don't use mpd::search::Filter directly
     /// here to keep the Rule struct Send+Sync.
-    Query(QueryLhs, String)
+    Query(QueryLhs, String),
+    /// Special case for Last-Modified, taking number of seconds to support
+    /// querying in relative to current datetime.
+    LastModified(i64),
 }
 
 /// Dynamic playlist struct.
@@ -99,7 +103,7 @@ pub enum Rule {
 /// can be added later.
 /// sticker conditions. To query a DP, we perform an intersection between sets of URIs
 /// returned by the query and each of the sticker conditions.
-#[derive(Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct DynamicPlaylist {
     pub name: String,
     pub description: String,

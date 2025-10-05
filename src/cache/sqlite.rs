@@ -11,7 +11,7 @@ use time::OffsetDateTime;
 use glib::{ThreadPool, ThreadHandle};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
+    common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo},
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
     utils::strip_filename_linux,
 };
@@ -736,6 +736,20 @@ pub fn clear_history() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn insert_dynamic_playlist(query: Query) -> Result<(), Error> {
+pub fn insert_dynamic_playlist(dp: &DynamicPlaylist) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    tx.execute("delete from queries where name = ?1", params![&dp.name]).map_err(|e| Error::DbError(e))?;
+    tx.execute(
+        "insert into queries (name, description, last_modified, play_count, rules) values (?1,?2,?3,?4,?5)",
+        params![
+            &dp.name,
+            &dp.description,
+            OffsetDateTime::now_utc(),
+            0,
+            bson::to_vec(&bson::to_document(&dp.rules).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+        ]
+    ).map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(|e| Error::DbError(e))?;
+    Ok(())
 }

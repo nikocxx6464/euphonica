@@ -1,4 +1,5 @@
 use std::{borrow::Cow, hash::BuildHasherDefault, num::NonZero, ops::Range, sync::Mutex};
+use chrono::{DateTime, Duration, Local};
 
 use async_channel::{SendError, Sender};
 use gio::prelude::SettingsExt;
@@ -935,6 +936,12 @@ pub fn load_playlist(
     }
 }
 
+fn get_past_unix_timestamp(backoff: i64) -> i64 {
+    let current_local_dt: DateTime<Local> = Local::now();
+    let backoff_dur: Duration = Duration::seconds(backoff);
+    current_local_dt.checked_sub_signed(backoff_dur).unwrap().timestamp()
+}
+
 fn resolve_dynamic_playlist_rules(
     client: &mut mpd::Client<stream::StreamWrapper>,
     dp: DynamicPlaylist
@@ -950,6 +957,10 @@ fn resolve_dynamic_playlist_rules(
             }
             Rule::Query(lhs, rhs) => {
                 query_clauses.push((lhs, rhs));
+            }
+            Rule::LastModified(secs) => {
+                // Special case: query current system datetime
+                query_clauses.push((QueryLhs::LastMod, get_past_unix_timestamp(secs).to_string()));
             }
         }
     }

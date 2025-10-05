@@ -306,6 +306,9 @@ impl MpdWrapper {
                         BackgroundTask::QueuePlaylist(name, play_from) => {
                             background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
                         }
+                        BackgroundTask::FetchDynamicPlaylist(dp, fetch_limit, queue, play) => {
+                            background::fetch_dynamic_playlist(&mut client, &sender_to_fg, dp, fetch_limit, queue, play);
+                        }
                     }
                 } else {
                     // If not, go into idle mode
@@ -479,6 +482,9 @@ impl MpdWrapper {
             }
             AsyncClientMessage::BackgroundError(error, or) => {
                 self.handle_common_mpd_error(&error, or);
+            }
+            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name, songs) => {
+                unimplemented!()
             }
         }
         glib::ControlFlow::Continue
