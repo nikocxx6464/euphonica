@@ -1,0 +1,130 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaDynamicPlaylistSongRow" parent="GtkBox">
+    <style>
+      <class name="padding-6"/>
+    </style>
+    <child>
+      <object class="GtkBox">
+        <property name="halign">3</property>
+        <property name="valign">3</property>
+        <property name="overflow">hidden</property>
+        <style>
+          <class name="border-radius-6"/>
+        </style>
+        <child>
+          <object class="GtkImage" id="thumbnail">
+            <property name="pixel-size">36</property>
+            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCenterBox">
+        <property name="hexpand">true</property>
+        <property name="start-widget">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="spacing">6</property>
+            <property name="margin-start">6</property>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel" id="song_name">
+                    <property name="halign">start</property>
+                    <property name="ellipsize">end</property>
+                    <style>
+                      <class name="heading"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage" id="quality_grade"/>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <child>
+                  <object class="GtkImage">
+                    <property name="icon-name">music-artist-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="artist_name">
+                    <property name="margin-start">4</property>
+                    <property name="ellipsize">end</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkSeparator">
+                    <style>
+                      <class name="spacer"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage">
+                    <property name="icon-name">library-music-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="album_name">
+                    <property name="margin-start">4</property>
+                    <property name="ellipsize">end</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkSeparator">
+                    <style>
+                      <class name="spacer"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage">
+                    <property name="icon-name">hourglass-symbolic</property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkLabel" id="duration">
+                    <property name="margin-start">4</property>
+                    <property name="label">0:00</property>
+                  </object>
+                </child>
+                <style>
+                  <class name="dim-label"/>
+                  <class name="caption"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+        <property name="end-widget">
+          <object class="GtkBox">
+            <child>
+              <object class="GtkButton" id="replace_queue">
+                <property name="tooltip-text" translatable="true">Replace queue with this song</property>
+                <property name="icon-name">play-symbolic</property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+            <child>
+              <object class="GtkButton" id="append_queue">
+                <property name="tooltip-text" translatable="true">Add this song to the end of the queue</property>
+                <property name="icon-name">list-add-symbolic</property>
+                <style>
+                  <class name="flat"/>
+                </style>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

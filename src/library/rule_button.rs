@@ -64,6 +64,7 @@ mod imp {
             self.rule_type.set_model(Some(&gtk::StringList::new(
                 Self::rule_type_model()
             )));
+
             // Operator segment is applicable for
             // - Album rating (all numeric operators),
             // - URI (starts with; ==),
@@ -92,15 +93,6 @@ mod imp {
                     this.validate();
                 }
             ));
-        }
-
-        fn signals() -> &'static [Signal] {
-            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
-            SIGNALS.get_or_init(|| {
-                vec![
-                    Signal::builder("changed").build(),
-                ]
-            })
         }
 
         // fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
@@ -258,6 +250,8 @@ mod imp {
                     );
                     lhs.set_visible(false);
                     rhs.set_visible(true);
+                    rhs.set_max_width_chars(3);
+                    rhs.set_max_length(3);
                 }
                 "URI" => {
                     op_model = Some(
@@ -267,6 +261,8 @@ mod imp {
                     );
                     lhs.set_visible(false);
                     rhs.set_visible(true);
+                    rhs.set_max_width_chars(16);
+                    rhs.set_max_length(0);
                 },
                 "Modified within last" => {
                     op_model = Some(
@@ -275,6 +271,8 @@ mod imp {
                         )
                     );
                     lhs.set_visible(true);
+                    lhs.set_max_width_chars(4);
+                    lhs.set_max_length(4);
                     rhs.set_visible(false);
                 },
                 "Any tag" | "Tag: Album" | "Tag: Artist"
@@ -286,6 +284,8 @@ mod imp {
                         );
                         lhs.set_visible(false);
                         rhs.set_visible(true);
+                        rhs.set_max_width_chars(16);
+                        rhs.set_max_length(0);
                     },
                 _ => {
                     op_model = None;
@@ -305,7 +305,10 @@ mod imp {
                     | "Tag: AlbumArtist" => self.rhs_is_nonempty(),
                 _ => unimplemented!()
             };
-            self.is_valid.set(is_valid);
+            let old_valid = self.is_valid.replace(is_valid);
+            if old_valid != is_valid {
+                self.obj().notify("is-valid");
+            }
         }
 
         fn lhs_is_numeric<T: Sized + FromStr + PartialOrd, R: RangeBounds<T>>(&self, range: R) -> bool {
@@ -314,7 +317,7 @@ mod imp {
             let is_valid = !text.is_empty() && text.parse::<T>().is_ok_and(|num| range.contains(&num));
             if !is_valid && !entry.has_css_class("error") {
                 entry.add_css_class("error");
-            } else if entry.has_css_class("error") {
+            } else if is_valid && entry.has_css_class("error") {
                 entry.remove_css_class("error");
             }
             is_valid
@@ -326,7 +329,7 @@ mod imp {
             let is_valid = !text.is_empty() && text.parse::<T>().is_ok_and(|num| range.contains(&num));
             if !is_valid && !entry.has_css_class("error") {
                 entry.add_css_class("error");
-            } else if entry.has_css_class("error") {
+            } else if is_valid && entry.has_css_class("error") {
                 entry.remove_css_class("error");
             }
             is_valid
@@ -337,14 +340,10 @@ mod imp {
             let is_err = entry.text().is_empty();
             if is_err && !entry.has_css_class("error") {
                 entry.add_css_class("error");
-            } else if entry.has_css_class("error") {
+            } else if !is_err && entry.has_css_class("error") {
                 entry.remove_css_class("error");
             }
             !is_err
-        }
-
-        fn emit_changed(&self) {
-            self.obj().emit_by_name::<()>("changed", &[]);
         }
     }
 }
@@ -365,6 +364,11 @@ impl RuleButton {
             res,
             move |_| {
                 if let Some(wrap_box) = res.imp().wrap_box.upgrade() {
+                    // Notify once to decrement error count in editor if this is an invalid rule
+                    let old_valid = res.imp().is_valid.replace(true);
+                    if !old_valid {
+                        res.notify("is-valid");
+                    }
                     wrap_box.remove(&res);
                 }
             }
@@ -430,6 +434,10 @@ impl RuleButton {
                 _ => unimplemented!()
             }
         }
+    }
+
+    pub fn validate(&self) {
+        self.imp().validate();
     }
 
     fn get_tag_op(&self) -> TagOperation {

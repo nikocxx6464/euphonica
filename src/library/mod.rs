@@ -22,6 +22,7 @@ mod playlist_row;
 mod dynamic_playlist_editor_view;
 mod dynamic_playlist_song_row;
 mod rule_button;
+mod ordering_button;
 
 // Common stuff shared between views
 mod add_to_playlist;

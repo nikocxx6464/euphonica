@@ -4,6 +4,15 @@ use mpd::{search::{Operation as TagOperation}, Query, Term};
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Ordering {
+    Random,
+    LastModified,
+    FirstModified,
+    DescRating,
+    AscRating
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StickerOperation {
     LessThan,
     GreaterThan,
@@ -110,5 +119,6 @@ pub struct DynamicPlaylist {
     pub last_modified: String,
     pub last_queued: String,
     pub play_count: isize,
-    pub rules: Vec<Rule>
+    pub rules: Vec<Rule>,
+    pub ordering: Vec<Ordering>
 }

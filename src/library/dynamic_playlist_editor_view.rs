@@ -9,13 +9,13 @@ use std::{
 use time::{format_description, Date};
 use derivative::Derivative;
 
-use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
+use super::{artist_tag::ArtistTag, rule_button::RuleButton, AlbumSongRow, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::{DynamicPlaylistSongRow, PlaylistSongRow}, utils::format_secs_as_duration, window::EuphonicaWindow
 };
 
 #[derive(Default, Debug, Clone)]
-enum CoverPathAction {
+pub enum CoverPathAction {
     #[default]
     NoChange,
     New(String),
@@ -29,7 +29,7 @@ mod imp {
     use async_channel::Sender;
     use gio::ListStore;
 
-    use crate::{common::DynamicPlaylist, library::{rule_button::RuleButton}, utils};
+    use crate::{common::DynamicPlaylist, library::{ordering_button::OrderingButton, rule_button::RuleButton}, utils};
 
     use super::*;
 
@@ -61,6 +61,12 @@ mod imp {
         pub add_rule_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub rules_box: TemplateChild<adw::WrapBox>,
+        pub rules_model: OnceCell<gio::ListModel>,
+        #[template_child]
+        pub add_ordering_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub ordering_box: TemplateChild<adw::WrapBox>,
+        pub ordering_model: OnceCell<gio::ListModel>,
 
         #[template_child]
         pub track_count: TemplateChild<gtk::Label>,
@@ -77,12 +83,14 @@ mod imp {
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         pub cover_action: RefCell<CoverPathAction>,
+        pub rules_valid: Cell<bool>,
+        pub title_valid: Cell<bool>,
 
         pub library: OnceCell<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         pub dp: RefCell<Option<DynamicPlaylist>>,
         pub window: OnceCell<EuphonicaWindow>,
-        pub filepath_sender: OnceCell<Sender<String>>
+        pub filepath_sender: OnceCell<Sender<String>>,
     }
 
     #[glib::object_subclass]
@@ -113,14 +121,71 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
+            // TODO: find another way as observe_children() is very inefficient
+            let _ = self.rules_model.set(
+                self.rules_box.observe_children()
+            );
+
             self.add_rule_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
                     let rules_box = this.rules_box.get();
-                    rules_box.append(&RuleButton::new(&rules_box));
+                    let btn = RuleButton::new(&rules_box);
+                    rules_box.append(&btn);
+                    btn.connect_notify_local(
+                        Some("is-valid"),
+                        clone!(
+                            #[weak]
+                            this,
+                            move |_, _| {
+                                this.obj().validate_rules();
+                            }
+                        )
+                    );
+                    // Validate once at creation
+                    btn.validate();
+                    this.obj().validate_rules();
                 }
             ));
+
+            // TODO: find another way as observe_children() is very inefficient
+            let _ = self.ordering_model.set(
+                self.ordering_box.observe_children()
+            );
+
+            self.add_ordering_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    let ordering_box = this.ordering_box.get();
+                    ordering_box.append(&OrderingButton::new(&ordering_box));
+                }
+            ));
+
+            let infobox_revealer = self.infobox_revealer.get();
+            let collapse_infobox = self.collapse_infobox.get();
+            collapse_infobox
+                .bind_property("active", &infobox_revealer, "reveal-child")
+                .transform_to(|_, active: bool| Some(!active))
+                .transform_from(|_, active: bool| Some(!active))
+                .bidirectional()
+                .sync_create()
+                .build();
+
+            infobox_revealer
+                .bind_property("child-revealed", &collapse_infobox, "icon-name")
+                .transform_to(|_, revealed| {
+                    if revealed {
+                        return Some("up-symbolic");
+                    }
+                    Some("down-symbolic")
+                })
+                .sync_create()
+                .build();
+
+            self.obj().update_sensitivity();
         }
     }
 
@@ -236,27 +301,6 @@ impl DynamicPlaylistEditorView {
             ),
         );
 
-        let infobox_revealer = self.imp().infobox_revealer.get();
-        let collapse_infobox = self.imp().collapse_infobox.get();
-        collapse_infobox
-            .bind_property("active", &infobox_revealer, "reveal-child")
-            .transform_to(|_, active: bool| Some(!active))
-            .transform_from(|_, active: bool| Some(!active))
-            .bidirectional()
-            .sync_create()
-            .build();
-
-        infobox_revealer
-            .bind_property("child-revealed", &collapse_infobox, "icon-name")
-            .transform_to(|_, revealed| {
-                if revealed {
-                    return Some("up-symbolic");
-                }
-                Some("down-symbolic")
-            })
-            .sync_create()
-            .build();
-
         // Set up channel for listening to cover path dialog
         // It is in these situations that Rust's lack of a standard async library bites hard.
         let (sender, receiver) = async_channel::unbounded::<String>();
@@ -345,6 +389,38 @@ impl DynamicPlaylistEditorView {
         //         }
         //     }
         // ));
+    }
+
+    fn validate_rules(&self) {
+        let model = self.imp().rules_model.get().unwrap();
+        let n_items = model.n_items();
+        if n_items == 0 {
+            let old_rules_valid = self.imp().rules_valid.replace(false);
+            if old_rules_valid {
+                self.update_sensitivity();
+            }
+            return;
+        }
+        let mut per_rule_is_valid: Vec<bool> = Vec::with_capacity(n_items as usize);
+        for i in 0..n_items {
+            per_rule_is_valid.push(
+                model.item(i).and_downcast_ref::<RuleButton>().unwrap().is_valid()
+            );
+        }
+        let new_rules_valid = per_rule_is_valid
+            .iter()
+            .fold(true, |left, item| { left && *item });
+        let old_rules_valid = self.imp().rules_valid.replace(new_rules_valid);
+        if old_rules_valid != new_rules_valid {
+            self.update_sensitivity();
+        }
+    }
+
+    fn update_sensitivity(&self) {
+        // let sensitive = self.imp().rules_valid.get() && self.imp().title_valid.get();
+        let sensitive = self.imp().rules_valid.get();
+        self.imp().save_btn.set_sensitive(sensitive);
+        self.imp().refresh_btn.set_sensitive(sensitive);
     }
 
     fn clear_cover(&self) {

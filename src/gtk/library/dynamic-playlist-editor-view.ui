@@ -53,7 +53,6 @@
                 <condition>max-width: 550px</condition>
                 <setter object="cover_box" property="halign">center</setter>
                 <setter object="infobox" property="orientation">1</setter>
-                <setter object="cover" property="pixel-size">96</setter>
               </object>
             </child>
             <property name="child">
@@ -74,105 +73,123 @@
                         <property name="margin-start">6</property>
                         <property name="margin-end">6</property>
                         <property name="spacing">6</property>
+                        <property name="orientation">1</property>
                         <child>
-                          <object class="GtkBox" id="cover_box">
-                            <property name="halign">start</property>
-                            <property name="valign">start</property>
-                            <property name="overflow">hidden</property>
-                            <style>
-                              <class name="border-radius-6" />
-                            </style>
+                          <object class="GtkBox">
+                            <property name="spacing">6</property>
                             <child>
-                              <object class="GtkImage" id="cover">
-                                <property name="pixel-size">256</property>
-                                <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
+                              <object class="GtkBox" id="cover_box">
+                                <property name="halign">start</property>
+                                <property name="valign">start</property>
+                                <property name="overflow">hidden</property>
+                                <style>
+                                  <class name="border-radius-12" />
+                                </style>
+                                <child>
+                                  <object class="GtkImage" id="cover">
+                                    <property name="pixel-size">48</property>
+                                    <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkBox">
+                                <property name="orientation">1</property>
+                                <property name="spacing">6</property>
+                                <property name="hexpand">true</property>
+                                <child>
+                                  <object class="GtkEntry" id="title">
+                                    <property name="placeholder-text" translatable="true">Playlist name</property>
+                                    <style>
+                                      <class name="title-2"/>
+                                    </style>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkEntry" id="description">
+                                    <property name="placeholder-text" translatable="true">Description</property>
+                                    <style>
+                                      <class name="caption"/>
+                                    </style>
+                                  </object>
+                                </child>
                               </object>
                             </child>
                           </object>
                         </child>
                         <child>
-                          <object class="GtkBox" id="infobox_text">
+                          <object class="GtkBox">
                             <property name="orientation">1</property>
                             <property name="spacing">6</property>
                             <property name="hexpand">true</property>
+
                             <child>
-                              <object class="GtkEntry" id="title">
-                                <property name="placeholder-text" translatable="true">Playlist name</property>
-                                <style>
-                                  <class name="title-2"/>
-                                </style>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkEntry" id="description">
-                                <property name="placeholder-text" translatable="true">Description</property>
-                                <style>
-                                  <class name="caption"/>
-                                </style>
-                              </object>
-                            </child>
-                            <child>
-                              <object class="GtkCenterBox">
-                                <property name="start-widget">
-                                  <object class="GtkBox">
-                                    <property name="spacing">6</property>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="label" translatable="true">Rules</property>
-                                        <style>
-                                          <class name="heading"/>
-                                        </style>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkButton" id="add_rule_btn">
-                                        <property name="valign">center</property>
-                                        <property name="icon-name">list-add-symbolic</property>
-                                        <style>
-                                          <class name="circular"/>
-                                        </style>
-                                      </object>
-                                    </child>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="true">Rules</property>
+                                    <style>
+                                      <class name="heading"/>
+                                    </style>
                                   </object>
-                                </property>
-                                <property name="end-widget">
-                                  <object class="GtkBox">
-                                    <property name="spacing">6</property>
-                                    <child>
-                                      <object class="GtkLabel">
-                                        <property name="label" translatable="true">Ordering</property>
-                                        <style>
-                                          <class name="heading"/>
-                                        </style>
-                                      </object>
-                                    </child>
-                                    <child>
-                                      <object class="GtkDropDown" id="sort_by">
-                                        <property name="valign">center</property>
-                                        <property name="model">
-                                          <object class="GtkStringList">
-                                            <items>
-                                              <item translatable="yes">None</item>
-                                              <item translatable="yes">Random</item>
-                                              <item translatable="yes">Last modified</item>
-                                              <item translatable="yes">First modified</item>
-                                              <item translatable="yes">Desc. rating</item>
-                                              <item translatable="yes">Asc. rating</item>
-                                            </items>
-                                          </object>
-                                        </property>
-                                      </object>
-                                    </child>
+                                </child>
+                                <child>
+                                  <object class="GtkButton" id="add_rule_btn">
+                                    <property name="valign">center</property>
+                                    <property name="icon-name">list-add-symbolic</property>
+                                    <style>
+                                      <class name="circular"/>
+                                    </style>
                                   </object>
-                                </property>
+                                </child>
                               </object>
                             </child>
                             <child>
                               <object class="GtkScrolledWindow">
+                                <property name="propagate-natural-height">true</property>
+                                <property name="vexpand">true</property>
                                 <child>
                                   <object class="AdwWrapBox" id="rules_box">
                                     <property name="hexpand">true</property>
-                                    <property name="vexpand">true</property>
+                                    <property name="child-spacing">3</property>
+                                    <property name="line-spacing">3</property>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+
+                            <child>
+                              <object class="GtkBox">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkLabel">
+                                    <property name="label" translatable="true">Ordering</property>
+                                    <style>
+                                      <class name="heading"/>
+                                    </style>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkButton" id="add_ordering_btn">
+                                    <property name="valign">center</property>
+                                    <property name="icon-name">list-add-symbolic</property>
+                                    <style>
+                                      <class name="circular"/>
+                                    </style>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkScrolledWindow">
+                                <property name="propagate-natural-height">true</property>
+                                <property name="vexpand">true</property>
+                                <child>
+                                  <object class="AdwWrapBox" id="ordering_box">
+                                    <property name="hexpand">true</property>
                                     <property name="child-spacing">3</property>
                                     <property name="line-spacing">3</property>
                                   </object>

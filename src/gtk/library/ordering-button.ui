@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0" />
+  <requires lib="Adw" version="1.0" />
+  <template class="EuphonicaOrderingButton" parent="GtkBox">
+    <child>
+      <object class="GtkDropDown" id="order_by">
+        <property name="model">
+          <object class="GtkStringList">
+            <items>
+              <item translatable="yes">None</item>
+              <item translatable="yes">Random</item>
+              <item translatable="yes">Last modified</item>
+              <item translatable="yes">First modified</item>
+              <item translatable="yes">Desc. rating</item>
+              <item translatable="yes">Asc. rating</item>
+            </items>
+          </object>
+        </property>
+      </object>
+    </child>
+
+    <child>
+      <object class="GtkButton" id="delete">
+        <property name="icon-name">cross-small-symbolic</property>
+      </object>
+    </child>
+    <style>
+      <class name="linked"/>
+    </style>
+  </template>
+</interface>
