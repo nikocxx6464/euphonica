@@ -43,6 +43,35 @@
 						</child>
 
 						<child>
+							<object class="GtkBox" id="dyn_playlists_section">
+								<!-- TODO: only show when supported -->
+								<property name="visible">true</property>
+								<property name="spacing">6</property>
+								<property name="orientation">1</property>
+								<child>
+									<object class="GtkSeparator"></object>
+								</child>
+
+								<child>
+									<object class="EuphonicaSidebarButton" id="dyn_playlists_btn">
+										<property name="group">recent_btn</property>
+										<property name="label" translatable="true">Dynamic Playlists</property>
+										<property name="icon_name">playlist-symbolic</property>
+									</object>
+								</child>
+
+								<child>
+									<object class="GtkListBox" id="recent_dyn_playlists">
+										<property name="hexpand">true</property>
+										<property name="selection-mode">none</property>
+										<style>
+											<class name="no-bg"/>
+										</style>
+									</object>
+								</child>
+							</object>
+						</child>
+						<child>
 							<object class="GtkBox" id="playlists_section">
 								<property name="visible">false</property>
 								<property name="spacing">6</property>

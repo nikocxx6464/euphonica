@@ -226,7 +226,7 @@ impl PlaylistSongRow {
         self.imp()
            .cache
            .set(cache)
-           .expect("ArtistSongRow cannot bind to cache");
+           .expect("PlaylistSongRow cannot bind to cache");
         let _ = self.imp().library.set(library);
         let _ = self.imp().content_view.set(view);
         item.property_expression("position")

@@ -158,6 +158,16 @@ impl Sidebar {
             }
         ));
 
+        self.imp().dyn_playlists_btn.connect_toggled(clone!(
+            #[weak]
+            stack,
+            move |btn| {
+                if btn.is_active() {
+                    stack.set_visible_child_name("dynamic_playlists");
+                }
+            }
+        ));
+
         let playlist_view = win.get_playlist_view();
         let playlists = library.playlists();
         let recent_playlists_model = gtk::SliceListModel::new(

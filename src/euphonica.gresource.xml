@@ -21,6 +21,9 @@
     <file preprocess="xml-stripblanks">gtk/library/artist-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-editor-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-song-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/rule-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-content-view.ui</file>

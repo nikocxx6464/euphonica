@@ -25,6 +25,12 @@
 		</child>
 
 		<child>
+			<object class="GtkEntry" id="lhs">
+				<property name="visible">false</property>
+			</object>
+		</child>
+
+		<child>
 			<object class="GtkDropDown" id="op">
 				<property name="visible">false</property>
 			</object>

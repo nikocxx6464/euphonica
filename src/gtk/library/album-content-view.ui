@@ -27,7 +27,6 @@
               <object class="AdwBreakpoint">
                 <condition>max-width: 550px</condition>
                 <setter object="infobox" property="orientation">1</setter>
-                <setter object="infobox_text" property="margin-start">12</setter>
                 <setter object="cover" property="pixel-size">128</setter>
                 <setter object="replace_queue_text" property="visible">false</setter>
                 <setter object="add_to_playlist" property="collapsed">true</setter>
@@ -49,6 +48,7 @@
                     <property name="child">
                       <object class="GtkBox" id="infobox">
                         <property name="margin-start">6</property>
+                        <property name="margin-end">6</property>
                         <property name="spacing">12</property>
                         <child>
                           <object class="GtkBox">
@@ -211,7 +211,6 @@
                                             <child>
                                               <object class="GtkLabel" id="wiki_text">
                                                 <property name="halign">start</property>
-                                                <property name="margin-end">12</property>
                                                 <property name="wrap">true</property>
                                                 <property name="justify">fill</property>
                                                 <style>
@@ -340,6 +339,9 @@
                   </object>
                 </child>
                 <child>
+                  <object class="GtkSeparator"/>
+                </child>
+                <child>
                   <object class="GtkScrolledWindow">
                     <property name="height-request">50</property>
                     <property name="hscrollbar-policy">never</property>
@@ -374,7 +376,7 @@
                     </property>
                   </object>
                 </child>
-              </object> 
+              </object>
             </property>
           </object>
         </property>

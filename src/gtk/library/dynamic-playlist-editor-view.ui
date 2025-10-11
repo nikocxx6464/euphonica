@@ -2,31 +2,29 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <template class="EuphonicaDynamicPlaylistEditorView" parent="GtkWidget">
-    <child>
-      <object class="AdwDialog" id="edit_cover_dialog">
-        <property name="child">
-          <object class="GtkBox">
-            <property name="orientation">1</property>
-            <property name="spacing">6</property>
-            <child>
-              <object class="GtkButton" id="set_cover_btn">
-                <property name="label" translatable="true">Set new cover</property>
-                <property name="hexpand">true</property>
-              </object>
-            </child>
-            <child>
-              <object class="GtkButton" id="clear_cover_btn">
-                <property name="label" translatable="true">Clear cover</property>
-                <property name="hexpand">true</property>
-                <style>
-                  <class name="destructive-action"/>
-                </style>
-              </object>
-            </child>
-          </object>
-        </property>
-      </object>
-    </child>
+    <object class="AdwDialog" id="edit_cover_dialog">
+      <property name="child">
+        <object class="GtkBox">
+          <property name="orientation">1</property>
+          <property name="spacing">6</property>
+          <child>
+            <object class="GtkButton" id="set_cover_btn">
+              <property name="label" translatable="true">Set new cover</property>
+              <property name="hexpand">true</property>
+            </object>
+          </child>
+          <child>
+            <object class="GtkButton" id="clear_cover_btn">
+              <property name="label" translatable="true">Clear cover</property>
+              <property name="hexpand">true</property>
+              <style>
+                <class name="destructive-action"/>
+              </style>
+            </object>
+          </child>
+        </object>
+      </property>
+    </object>
     <child>
       <object class="AdwToolbarView">
         <child type="top">
@@ -53,9 +51,9 @@
             <child>
               <object class="AdwBreakpoint">
                 <condition>max-width: 550px</condition>
+                <setter object="cover_box" property="halign">center</setter>
                 <setter object="infobox" property="orientation">1</setter>
-                <setter object="infobox_text" property="margin-start">12</setter>
-                <setter object="cover" property="pixel-size">128</setter>
+                <setter object="cover" property="pixel-size">96</setter>
               </object>
             </child>
             <property name="child">
@@ -74,11 +72,12 @@
                     <property name="child">
                       <object class="GtkBox" id="infobox">
                         <property name="margin-start">6</property>
-                        <property name="spacing">12</property>
+                        <property name="margin-end">6</property>
+                        <property name="spacing">6</property>
                         <child>
-                          <object class="GtkBox">
-                            <property name="halign">3</property>
-                            <property name="valign">3</property>
+                          <object class="GtkBox" id="cover_box">
+                            <property name="halign">start</property>
+                            <property name="valign">start</property>
                             <property name="overflow">hidden</property>
                             <style>
                               <class name="border-radius-6" />
@@ -86,7 +85,7 @@
                             <child>
                               <object class="GtkImage" id="cover">
                                 <property name="pixel-size">256</property>
-                                <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder.png</property>
+                                <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
                               </object>
                             </child>
                           </object>
@@ -98,9 +97,6 @@
                             <property name="hexpand">true</property>
                             <child>
                               <object class="GtkEntry" id="title">
-                                <property name="halign">start</property>
-                                <property name="wrap">true</property>
-                                <property name="justify">left</property>
                                 <property name="placeholder-text" translatable="true">Playlist name</property>
                                 <style>
                                   <class name="title-2"/>
@@ -109,9 +105,6 @@
                             </child>
                             <child>
                               <object class="GtkEntry" id="description">
-                                <property name="halign">start</property>
-                                <property name="wrap">true</property>
-                                <property name="justify">left</property>
                                 <property name="placeholder-text" translatable="true">Description</property>
                                 <style>
                                   <class name="caption"/>
@@ -119,29 +112,67 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="true">Rules</property>
-                                    <style>
-                                      <class name="caption-heading"/>
-                                    </style>
+                              <object class="GtkCenterBox">
+                                <property name="start-widget">
+                                  <object class="GtkBox">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Rules</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkButton" id="add_rule_btn">
+                                        <property name="valign">center</property>
+                                        <property name="icon-name">list-add-symbolic</property>
+                                        <style>
+                                          <class name="circular"/>
+                                        </style>
+                                      </object>
+                                    </child>
                                   </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="add_rule_btn">
-                                    <property name="icon-name">list-add-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
+                                </property>
+                                <property name="end-widget">
+                                  <object class="GtkBox">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkLabel">
+                                        <property name="label" translatable="true">Ordering</property>
+                                        <style>
+                                          <class name="heading"/>
+                                        </style>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkDropDown" id="sort_by">
+                                        <property name="valign">center</property>
+                                        <property name="model">
+                                          <object class="GtkStringList">
+                                            <items>
+                                              <item translatable="yes">None</item>
+                                              <item translatable="yes">Random</item>
+                                              <item translatable="yes">Last modified</item>
+                                              <item translatable="yes">First modified</item>
+                                              <item translatable="yes">Desc. rating</item>
+                                              <item translatable="yes">Asc. rating</item>
+                                            </items>
+                                          </object>
+                                        </property>
+                                      </object>
+                                    </child>
                                   </object>
-                                </child>
+                                </property>
                               </object>
+                            </child>
                             <child>
                               <object class="GtkScrolledWindow">
                                 <child>
                                   <object class="AdwWrapBox" id="rules_box">
+                                    <property name="hexpand">true</property>
+                                    <property name="vexpand">true</property>
                                     <property name="child-spacing">3</property>
                                     <property name="line-spacing">3</property>
                                   </object>
@@ -201,14 +232,30 @@
                       </object>
                     </property>
                     <property name="end-widget">
-                      <object class="GtkButton" id="refresh_btn">
-                        <property name="label" translatable="true">Refresh</property>
-                        <style>
-                          <class name="suggested-action"/>
-                        </style>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkButton" id="refresh_btn">
+                            <property name="label" translatable="true">Refresh</property>
+                            <style>
+                              <class name="suggested-action"/>
+                            </style>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkToggleButton" id="collapse_infobox">
+                            <property name="icon-name">up-symbolic</property>
+                            <style>
+                              <class name="flat"/>
+                            </style>
+                          </object>
+                        </child>
                       </object>
                     </property>
                   </object>
+                </child>
+                <child>
+                  <object class="GtkSeparator"/>
                 </child>
                 <child>
                   <object class="GtkScrolledWindow">
@@ -226,7 +273,7 @@
                             <property name="child">
                               <object class="AdwStatusPage">
                                 <property name="title" translatable="true">No Rules</property>
-                                <property name="description" translatable="true">Dynamic playlists are defined by a set of query rules instead of a fixed song list. Try adding a rule or two, then tap Refresh.</property>
+                                <property name="description" translatable="true">Dynamic playlists are defined by a set of query rules instead of a fixed song list. Try adding one, then tap Refresh.</property>
                               </object>
                             </property>
                           </object>

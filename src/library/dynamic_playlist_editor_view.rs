@@ -11,7 +11,7 @@ use derivative::Derivative;
 
 use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::PlaylistSongRow, utils::format_secs_as_duration, window::EuphonicaWindow
+    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::{DynamicPlaylistSongRow, PlaylistSongRow}, utils::format_secs_as_duration, window::EuphonicaWindow
 };
 
 #[derive(Default, Debug, Clone)]
@@ -79,9 +79,9 @@ mod imp {
         pub cover_action: RefCell<CoverPathAction>,
 
         pub library: OnceCell<Library>,
+        pub cache: OnceCell<Rc<Cache>>,
         pub dp: RefCell<Option<DynamicPlaylist>>,
         pub window: OnceCell<EuphonicaWindow>,
-        pub cache: OnceCell<Rc<Cache>>,
         pub filepath_sender: OnceCell<Sender<String>>
     }
 
@@ -142,6 +142,10 @@ impl Default for DynamicPlaylistEditorView {
 impl DynamicPlaylistEditorView {
     fn get_library(&self) -> Option<&Library> {
         self.imp().library.get()
+    }
+
+    fn get_cache(&self) -> Option<&Rc<Cache>> {
+        self.imp().cache.get()
     }
 
     /// Set a user-selected path as the new local cover.
@@ -283,9 +287,8 @@ impl DynamicPlaylistEditorView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(
+                let row = DynamicPlaylistSongRow::new(
                     this.get_library().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
-                    this.as_ref(),
                     &item,
                     this.get_cache().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
                 );

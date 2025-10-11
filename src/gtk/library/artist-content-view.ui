@@ -27,7 +27,6 @@
               <object class="AdwBreakpoint">
                 <condition>max-width: 550px</condition>
                 <setter object="infobox" property="orientation">1</setter>
-                <setter object="infobox_text" property="margin-start">12</setter>
                 <setter object="discography_text" property="visible">false</setter>
                 <setter object="all_songs_text" property="visible">false</setter>
                 <setter object="replace_queue_text" property="visible">false</setter>
@@ -47,6 +46,7 @@
                     <property name="child">
                       <object class="GtkBox" id="infobox">
                         <property name="margin-start">6</property>
+                        <property name="margin-end">6</property>
                         <property name="spacing">12</property>
                         <child>
                           <object class="AdwAvatar" id="avatar">
@@ -145,7 +145,6 @@
                                             <child>
                                               <object class="GtkLabel" id="bio_text">
                                                 <property name="halign">start</property>
-                                                <property name="margin-end">12</property>
                                                 <property name="wrap">true</property>
                                                 <property name="justify">fill</property>
                                                 <style>
@@ -397,6 +396,9 @@
                                   </object>
                                 </property>
                               </object>
+                            </child>
+                            <child>
+                              <object class="GtkSeparator"/>
                             </child>
                             <child>
                               <object class="GtkScrolledWindow">
