@@ -5,7 +5,7 @@ use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-
+use derivative::Derivative;
 use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
 use super::{Library, PlaylistSongRow};
@@ -87,7 +87,8 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-content-view.ui")]
     pub struct PlaylistContentView {
         #[template_child]
@@ -152,8 +153,11 @@ mod imp {
         #[template_child]
         pub delete: TemplateChild<gtk::Button>,
 
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub editing_song_list: gio::ListStore,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub sel_model: gtk::MultiSelection,
         pub is_editing: Cell<bool>,
         pub history: RefCell<Vec<HistoryStep>>,
@@ -171,58 +175,6 @@ mod imp {
         // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
         pub last_scroll_pos: Cell<f64>,
         pub restore_last_pos: Cell<u8>
-    }
-
-    impl Default for PlaylistContentView {
-        fn default() -> Self {
-            Self {
-                title: TemplateChild::default(),
-                last_mod: TemplateChild::default(),
-                track_count: TemplateChild::default(),
-                infobox_revealer: TemplateChild::default(),
-                cover: TemplateChild::default(),
-                collapse_infobox: TemplateChild::default(),
-                runtime: TemplateChild::default(),
-                content_stack: TemplateChild::default(),
-                content: TemplateChild::default(),
-                editing_content: TemplateChild::default(),
-                content_scroller: TemplateChild::default(),
-                editing_content_scroller: TemplateChild::default(),
-                song_list: gio::ListStore::new::<Song>(),
-                editing_song_list: gio::ListStore::new::<Song>(),
-                is_editing: Cell::new(false),
-                history: RefCell::new(Vec::new()),
-                history_idx: Cell::new(0),
-                sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
-                action_row: TemplateChild::default(),
-                replace_queue: TemplateChild::default(),
-                append_queue: TemplateChild::default(),
-                replace_queue_text: TemplateChild::default(),
-                append_queue_text: TemplateChild::default(),
-                edit_playlist: TemplateChild::default(),
-                edit_cancel: TemplateChild::default(),
-                edit_undo: TemplateChild::default(),
-                edit_redo: TemplateChild::default(),
-                edit_apply: TemplateChild::default(),
-                sel_all: TemplateChild::default(),
-                sel_none: TemplateChild::default(),
-                rename_menu_btn: TemplateChild::default(),
-                delete_menu_btn: TemplateChild::default(),
-                rename: TemplateChild::default(),
-                new_name: TemplateChild::default(),
-                delete: TemplateChild::default(),
-                bindings: RefCell::new(Vec::new()),
-                cover_signal_id: RefCell::new(None),
-                filepath_sender: OnceCell::new(),
-                cache: OnceCell::new(),
-                playlist: RefCell::new(None),
-                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-                window: OnceCell::new(),
-                library: OnceCell::new(),
-                last_scroll_pos: Cell::new(0.0),
-                restore_last_pos: Cell::new(0)
-            }
-        }
     }
 
     #[glib::object_subclass]

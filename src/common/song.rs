@@ -10,7 +10,7 @@ use std::{
     path::Path
 };
 use time::{Date, Month, OffsetDateTime};
-
+use derivative::Derivative;
 use crate::cache::{get_image_cache_path, sqlite};
 
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
@@ -75,10 +75,13 @@ fn parse_date(datestr: &str) -> Option<Date> {
 
 /// We define our own Song struct for more convenient handling, especially with
 /// regards to optional fields and tags such as albums.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Derivative)]
+#[derivative(Default)]
 pub struct SongInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
+    #[derivative(Default(value = "String::from(\"\")"))]
     pub uri: String,
+    #[derivative(Default(value = "String::from(\"Untitled Song\")"))]
     pub title: String, // Might just be filename
     // last_mod: RefCell<Option<u64>>,
     pub artists: Vec<ArtistInfo>,
@@ -88,7 +91,9 @@ pub struct SongInfo {
     pub queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
+    #[derivative(Default(value = "Cell::new(-1)"))]
     track: Cell<i64>,
+    #[derivative(Default(value = "Cell::new(-1)"))]
     disc: Cell<i64>,
     // TODO: add albumsort
     // Store Date instead of string to save a tiny bit of memory.
@@ -113,28 +118,6 @@ impl SongInfo {
 
     pub fn into_artist_infos(self) -> Vec<ArtistInfo> {
         self.artists
-    }
-}
-
-impl Default for SongInfo {
-    fn default() -> Self {
-        Self {
-            uri: String::from(""),
-            title: String::from("Untitled Song"),
-            artists: Vec::new(),
-            artist_tag: None,
-            duration: None,
-            queue_id: None,
-            queue_pos: None,
-            album: None,
-            track: Cell::new(-1), // negative values indicate no track index
-            disc: Cell::new(-1),
-            release_date: None,
-            quality_grade: QualityGrade::Unknown,
-            mbid: None,
-            last_modified: None,
-            last_played: None
-        }
     }
 }
 

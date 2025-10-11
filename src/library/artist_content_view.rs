@@ -6,6 +6,7 @@ use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
+use derivative::Derivative;
 
 use super::{AlbumCell, ArtistSongRow, Library};
 use crate::{
@@ -26,7 +27,8 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
         #[template_child]
@@ -64,7 +66,9 @@ mod imp {
         pub song_spinner: TemplateChild<gtk::Stack>,
         #[template_child]
         pub song_subview: TemplateChild<gtk::ListView>,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub song_sel_model: gtk::MultiSelection,
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -86,6 +90,7 @@ mod imp {
         pub album_spinner: TemplateChild<gtk::Stack>,
         #[template_child]
         pub album_subview: TemplateChild<gtk::GridView>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub album_list: gio::ListStore,
 
         pub library: OnceCell<Library>,
@@ -95,49 +100,6 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
         pub filepath_sender: OnceCell<Sender<String>>
-    }
-
-    impl Default for ArtistContentView {
-        fn default() -> Self {
-            Self {
-                avatar: TemplateChild::default(),
-                name: TemplateChild::default(),
-                song_count: TemplateChild::default(),
-                album_count: TemplateChild::default(),
-                infobox_spinner: TemplateChild::default(),
-                infobox_revealer: TemplateChild::default(),
-                collapse_infobox: TemplateChild::default(),
-                bio_text: TemplateChild::default(),
-                bio_link: TemplateChild::default(),
-                bio_attrib: TemplateChild::default(),
-                // runtime: TemplateChild::default(),
-                all_songs_btn: TemplateChild::default(),
-                subview_stack: TemplateChild::default(),
-                // All songs sub-view
-                song_spinner: TemplateChild::default(),
-                song_subview: TemplateChild::default(),
-                song_list: gio::ListStore::new::<Song>(),
-                song_sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
-                replace_queue: TemplateChild::default(),
-                append_queue: TemplateChild::default(),
-                replace_queue_text: TemplateChild::default(),
-                append_queue_text: TemplateChild::default(),
-                add_to_playlist: TemplateChild::default(),
-                sel_all: TemplateChild::default(),
-                sel_none: TemplateChild::default(),
-                // Discography sub-view
-                album_spinner: TemplateChild::default(),
-                album_subview: TemplateChild::default(),
-                album_list: gio::ListStore::new::<Album>(),
-                library: OnceCell::new(),
-                artist: RefCell::new(None),
-                bindings: RefCell::new(Vec::new()),
-                avatar_signal_id: RefCell::new(None),
-                cache: OnceCell::new(),
-                filepath_sender: OnceCell::new(),
-                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-            }
-        }
     }
 
     #[glib::object_subclass]

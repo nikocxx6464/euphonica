@@ -7,16 +7,14 @@ use std::{
     rc::Rc,
 };
 use time::{format_description, Date};
+use derivative::Derivative;
 
 use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
-    client::ClientState,
-    common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
-    utils::format_secs_as_duration, window::EuphonicaWindow,
+    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::PlaylistSongRow, utils::format_secs_as_duration, window::EuphonicaWindow
 };
 
-#[derive(Default, Debug, Copy)]
+#[derive(Default, Debug, Clone)]
 enum CoverPathAction {
     #[default]
     NoChange,
@@ -31,11 +29,12 @@ mod imp {
     use async_channel::Sender;
     use gio::ListStore;
 
-    use crate::{common::{DynamicPlaylist, Rating}, library::{add_to_playlist::AddToPlaylistButton, rule_button::RuleButton}, utils};
+    use crate::{common::DynamicPlaylist, library::{rule_button::RuleButton}, utils};
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-editor-view.ui")]
     pub struct DynamicPlaylistEditorView {
         #[template_child]
@@ -75,8 +74,9 @@ mod imp {
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
 
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
-        pub cover_action: Cell<CoverPathAction>,
+        pub cover_action: RefCell<CoverPathAction>,
 
         pub library: OnceCell<Library>,
         pub dp: RefCell<Option<DynamicPlaylist>>,
@@ -283,9 +283,11 @@ impl DynamicPlaylistEditorView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = AlbumSongRow::new(
-                    this.get_library().expect("Error: album content view not connected to library").clone(),
-                    &item
+                let row = PlaylistSongRow::new(
+                    this.get_library().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
+                    this.as_ref(),
+                    &item,
+                    this.get_cache().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
                 );
                 item.set_child(Some(&row));
             }
@@ -328,177 +330,174 @@ impl DynamicPlaylistEditorView {
         self.imp().content.set_factory(Some(&factory));
 
         // Setup click action
-        self.imp().content.connect_activate(clone!(
-            #[strong(rename_to = this)]
-            self,
-            move |_, position| {
-                if let (Some(album), Some(library)) = (
-                    this.imp().album.borrow().as_ref(),
-                    this.get_library()
-                ) {
-                    library.queue_album(album.clone(), true, true, Some(position as u32));
-                }
-            }
-        ));
+        // self.imp().content.connect_activate(clone!(
+        //     #[strong(rename_to = this)]
+        //     self,
+        //     move |_, position| {
+        //         if let (Some(album), Some(library)) = (
+        //             this.imp().album.borrow().as_ref(),
+        //             this.get_library()
+        //         ) {
+        //             library.queue_album(album.clone(), true, true, Some(position as u32));
+        //         }
+        //     }
+        // ));
     }
 
     fn clear_cover(&self) {
-        self.imp().cover_action.set(CoverSource::None);
+        self.imp().cover_action.replace(CoverPathAction::Clear);
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
     }
 
-    fn schedule_cover(&self, info: &AlbumInfo) {
-        self.imp().cover_source.set(CoverSource::Unknown);
+    /// Set a user-selected path as the new local cover.
+    pub fn set_cover(&self, path: &str) {
+        self.imp().cover_action.replace(CoverPathAction::New(path.to_owned()));
+        self.imp().cover.set_from_file(Some(path));
+    }
+
+    fn schedule_cover(&self, dp: &DynamicPlaylist) {
+        self.imp().cover_action.replace(CoverPathAction::NoChange);
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        if let Some((tex, is_embedded)) = self
+        if let Some(tex) = self
             .imp()
             .cache
             .get()
             .unwrap()
             .clone()
-            .load_cached_folder_cover(info, false, true) {
+            .load_cached_playlist_cover(&dp.name, false) {
                 self.imp().cover.set_paintable(Some(&tex));
-                self.imp().cover_source.set(
-                    if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                );
             }
     }
 
-    fn update_cover(&self, tex: gdk::Texture, src: CoverSource) {
-        self.imp().cover.set_paintable(Some(&tex));
-        self.imp().cover_source.set(src);
-    }
+    pub fn bind(&self, dp: DynamicPlaylist) {
+        // let title_label = self.imp().title.get();
+        // let artists_box = self.imp().artists_box.get();
+        // let rating = self.imp().rating.get();
+        // let release_date_label = self.imp().release_date.get();
+        // let mut bindings = self.imp().bindings.borrow_mut();
 
-    pub fn bind(&self, album: Album) {
-        self.imp().on_selection_changed();
-        let title_label = self.imp().title.get();
-        let artists_box = self.imp().artists_box.get();
-        let rating = self.imp().rating.get();
-        let release_date_label = self.imp().release_date.get();
-        let mut bindings = self.imp().bindings.borrow_mut();
+        // let title_binding = album
+        //     .bind_property("title", &title_label, "label")
+        //     .transform_to(|_, s: Option<&str>| {
+        //         Some(if s.is_none_or(|s| s.is_empty()) {
+        //             (*EMPTY_ALBUM_STRING).to_value()
+        //         } else {
+        //             s.to_value()
+        //         })
+        //     })
+        //     .sync_create()
+        //     .build();
+        // // Save binding
+        // bindings.push(title_binding);
 
-        let title_binding = album
-            .bind_property("title", &title_label, "label")
-            .transform_to(|_, s: Option<&str>| {
-                Some(if s.is_none_or(|s| s.is_empty()) {
-                    (*EMPTY_ALBUM_STRING).to_value()
-                } else {
-                    s.to_value()
-                })
-            })
-            .sync_create()
-            .build();
-        // Save binding
-        bindings.push(title_binding);
+        // // Populate artist tags
+        // let artist_tags = album.get_artists().iter().map(
+        //     |info| ArtistTag::new(
+        //         Artist::from(info.clone()),
+        //         self.imp().cache.get().unwrap().clone(),
+        //         self.imp().window.get().unwrap()
+        //     )
+        // ).collect::<Vec<ArtistTag>>();
+        // self.imp().artist_tags.extend_from_slice(&artist_tags);
+        // for tag in artist_tags {
+        //     artists_box.append(&tag);
+        // }
 
-        // Populate artist tags
-        let artist_tags = album.get_artists().iter().map(
-            |info| ArtistTag::new(
-                Artist::from(info.clone()),
-                self.imp().cache.get().unwrap().clone(),
-                self.imp().window.get().unwrap()
-            )
-        ).collect::<Vec<ArtistTag>>();
-        self.imp().artist_tags.extend_from_slice(&artist_tags);
-        for tag in artist_tags {
-            artists_box.append(&tag);
-        }
+        // let rating_binding = album
+        //     .bind_property("rating", &rating, "value")
+        //     .sync_create()
+        //     .build();
+        // // Save binding
+        // bindings.push(rating_binding);
 
-        let rating_binding = album
-            .bind_property("rating", &rating, "value")
-            .sync_create()
-            .build();
-        // Save binding
-        bindings.push(rating_binding);
+        // self.update_meta(&album);
+        // let release_date_binding = album
+        //     .bind_property("release_date", &release_date_label, "label")
+        //     .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
+        //         let format = format_description::parse("[year]-[month]-[day]")
+        //             .ok()
+        //             .unwrap();
+        //         if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {
+        //             return release_date.format(&format).ok();
+        //         }
+        //         Some("-".to_owned())
+        //     })
+        //     .sync_create()
+        //     .build();
+        // // Save binding
+        // bindings.push(release_date_binding);
 
-        self.update_meta(&album);
-        let release_date_binding = album
-            .bind_property("release_date", &release_date_label, "label")
-            .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
-                let format = format_description::parse("[year]-[month]-[day]")
-                    .ok()
-                    .unwrap();
-                if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {
-                    return release_date.format(&format).ok();
-                }
-                Some("-".to_owned())
-            })
-            .sync_create()
-            .build();
-        // Save binding
-        bindings.push(release_date_binding);
+        // let release_date_viz_binding = album
+        //     .bind_property("release_date", &release_date_label, "visible")
+        //     .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
+        //         if boxed_date.borrow::<Option<Date>>().is_some() {
+        //             return Some(true);
+        //         }
+        //         Some(false)
+        //     })
+        //     .sync_create()
+        //     .build();
+        // // Save binding
+        // bindings.push(release_date_viz_binding);
 
-        let release_date_viz_binding = album
-            .bind_property("release_date", &release_date_label, "visible")
-            .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
-                if boxed_date.borrow::<Option<Date>>().is_some() {
-                    return Some(true);
-                }
-                Some(false)
-            })
-            .sync_create()
-            .build();
-        // Save binding
-        bindings.push(release_date_viz_binding);
-
-        let info = album.get_info();
-        self.schedule_cover(info);
-        self.imp().album.borrow_mut().replace(album);
+        // let info = album.get_info();
+        // self.schedule_cover(info);
+        // self.imp().album.borrow_mut().replace(album);
     }
 
     pub fn unbind(&self) {
-        for binding in self.imp().bindings.borrow_mut().drain(..) {
-            binding.unbind();
-        }
+        // for binding in self.imp().bindings.borrow_mut().drain(..) {
+        //     binding.unbind();
+        // }
 
-        // Clear artists wrapbox. TODO: when adw 1.8 drops as stable please use remove_all() instead.
-        for tag in self.imp().artist_tags.iter::<gtk::Widget>() {
-            self.imp().artists_box.remove(&tag.unwrap());
-        }
-        self.imp().artist_tags.remove_all();
+        // // Clear artists wrapbox. TODO: when adw 1.8 drops as stable please use remove_all() instead.
+        // for tag in self.imp().artist_tags.iter::<gtk::Widget>() {
+        //     self.imp().artists_box.remove(&tag.unwrap());
+        // }
+        // self.imp().artist_tags.remove_all();
 
-        if let Some(id) = self.imp().cover_signal_id.take() {
-            if let Some(cache) = self.imp().cache.get() {
-                cache.get_cache_state().disconnect(id);
-            }
-        }
-        if let Some(_) = self.imp().album.take() {
-            self.clear_cover();
-        }
+        // if let Some(id) = self.imp().cover_signal_id.take() {
+        //     if let Some(cache) = self.imp().cache.get() {
+        //         cache.get_cache_state().disconnect(id);
+        //     }
+        // }
+        // if let Some(_) = self.imp().album.take() {
+        //     self.clear_cover();
+        // }
 
 
         // Unset metadata widgets
-        self.imp().song_list.remove_all();
-        let content_spinner = self.imp().content_spinner.get();
-        if content_spinner.visible_child_name().unwrap() != "spinner" {
-            content_spinner.set_visible_child_name("spinner");
-        }
-        let infobox_spinner = self.imp().infobox_spinner.get();
-        if infobox_spinner.visible_child_name().unwrap() != "spinner" {
-            infobox_spinner.set_visible_child_name("spinner");
-        }
+        // self.imp().song_list.remove_all();
+        // let content_spinner = self.imp().content_spinner.get();
+        // if content_spinner.visible_child_name().unwrap() != "spinner" {
+        //     content_spinner.set_visible_child_name("spinner");
+        // }
+        // let infobox_spinner = self.imp().infobox_spinner.get();
+        // if infobox_spinner.visible_child_name().unwrap() != "spinner" {
+        //     infobox_spinner.set_visible_child_name("spinner");
+        // }
     }
 
     fn add_songs(&self, songs: &[Song]) {
-        let content_spinner = self.imp().content_spinner.get();
-        if content_spinner.visible_child_name().unwrap() != "content" {
-            content_spinner.set_visible_child_name("content");
-        }
-        self.imp().song_list.extend_from_slice(songs);
-        self.imp()
-            .track_count
-            .set_label(&self.imp().song_list.n_items().to_string());
-        self.imp().runtime.set_label(&format_secs_as_duration(
-            self.imp()
-                .song_list
-                .iter()
-                .map(|item: Result<Song, _>| {
-                    if let Ok(song) = item {
-                        return song.get_duration();
-                    }
-                    0
-                })
-                .sum::<u64>() as f64,
-        ));
+        // let content_spinner = self.imp().content_spinner.get();
+        // if content_spinner.visible_child_name().unwrap() != "content" {
+        //     content_spinner.set_visible_child_name("content");
+        // }
+        // self.imp().song_list.extend_from_slice(songs);
+        // self.imp()
+        //     .track_count
+        //     .set_label(&self.imp().song_list.n_items().to_string());
+        // self.imp().runtime.set_label(&format_secs_as_duration(
+        //     self.imp()
+        //         .song_list
+        //         .iter()
+        //         .map(|item: Result<Song, _>| {
+        //             if let Ok(song) = item {
+        //                 return song.get_duration();
+        //             }
+        //             0
+        //         })
+        //         .sum::<u64>() as f64,
+        // ));
     }
 }

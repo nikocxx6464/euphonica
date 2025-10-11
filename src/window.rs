@@ -22,7 +22,15 @@ use crate::{
     application::EuphonicaApplication,
     client::{ClientError, ClientState, ConnectionState},
     common::{blend_mode::*, paintables::FadePaintable, Album, Artist},
-    library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView, RecentView},
+    library::{
+        AlbumView,
+        ArtistContentView,
+        ArtistView,
+        FolderView,
+        DynamicPlaylistEditorView,
+        PlaylistView,
+        RecentView
+    },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
     utils::{self, LazyInit, settings_manager},
@@ -135,6 +143,8 @@ mod imp {
         pub artist_view: TemplateChild<ArtistView>,
         #[template_child]
         pub folder_view: TemplateChild<FolderView>,
+        #[template_child]
+        pub dyn_playlist_view: TemplateChild<DynamicPlaylistEditorView>,
         #[template_child]
         pub playlist_view: TemplateChild<PlaylistView>,
         #[template_child]

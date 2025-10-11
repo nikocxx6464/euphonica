@@ -5,7 +5,6 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
-
 use glib::{clone, Properties};
 
 use super::{AlbumCell, AlbumContentView, Library};
@@ -25,7 +24,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties)]
+    #[derive(Debug, CompositeTemplate, Properties, Default)]
     #[properties(wrapper_type = super::AlbumView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-view.ui")]
     pub struct AlbumView {
@@ -76,42 +75,6 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
         pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
-    }
-
-    impl Default for AlbumView {
-        fn default() -> Self {
-            Self {
-                nav_view: TemplateChild::default(),
-                show_sidebar: TemplateChild::default(),
-                // Search & filter widgets
-                sort_dir: TemplateChild::default(),
-                sort_dir_btn: TemplateChild::default(),
-                sort_mode: TemplateChild::default(),
-                search_btn: TemplateChild::default(),
-                search_mode: TemplateChild::default(),
-                search_bar: TemplateChild::default(),
-                search_entry: TemplateChild::default(),
-                rating: TemplateChild::default(),
-                rating_mode: TemplateChild::default(),
-                // Content
-                grid_view: TemplateChild::default(),
-                content_page: TemplateChild::default(),
-                content_view: TemplateChild::default(),
-                // Search & filter models
-                search_filter: gtk::CustomFilter::default(),
-                sorter: gtk::CustomSorter::default(),
-                // Keep last length to optimise search
-                // If search term is now longer, only further filter still-matching
-                // items.
-                // If search term is now shorter, only check non-matching items to see
-                // if they now match.
-                last_search_len: Cell::new(0),
-                library: OnceCell::new(),
-
-                collapsed: Cell::new(false),
-                initialized: Cell::new(false)
-            }
-        }
     }
 
     #[glib::object_subclass]

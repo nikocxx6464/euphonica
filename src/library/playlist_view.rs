@@ -24,7 +24,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties)]
+    #[derive(Debug, CompositeTemplate, Properties, Default)]
     #[properties(wrapper_type = super::PlaylistView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-view.ui")]
     pub struct PlaylistView {
@@ -68,38 +68,6 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
-    }
-
-    impl Default for PlaylistView {
-        fn default() -> Self {
-            Self {
-                nav_view: TemplateChild::default(),
-                show_sidebar: TemplateChild::default(),
-                // Search & filter widgets
-                sort_dir: TemplateChild::default(),
-                sort_dir_btn: TemplateChild::default(),
-                sort_mode: TemplateChild::default(),
-                search_btn: TemplateChild::default(),
-                search_bar: TemplateChild::default(),
-                search_entry: TemplateChild::default(),
-                // Content
-                list_view: TemplateChild::default(),
-                content_page: TemplateChild::default(),
-                content_view: TemplateChild::default(),
-                // Search & filter models
-                search_filter: gtk::CustomFilter::default(),
-                sorter: gtk::CustomSorter::default(),
-                // Keep last length to optimise search
-                // If search term is now longer, only further filter still-matching
-                // items.
-                // If search term is now shorter, only check non-matching items to see
-                // if they now match.
-                last_search_len: Cell::new(0),
-                library: OnceCell::new(),
-                cache: OnceCell::new(),
-                collapsed: Cell::new(false)
-            }
-        }
     }
 
     #[glib::object_subclass]

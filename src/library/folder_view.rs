@@ -5,7 +5,6 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, rc::Rc};
-
 use glib::clone;
 
 use super::{generic_row::GenericRow, Library};
@@ -46,7 +45,7 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/folder-view.ui")]
     pub struct FolderView {
         #[template_child]
@@ -88,38 +87,6 @@ mod imp {
         pub library: OnceCell<Library>,
         pub collapsed: Cell<bool>,
         pub initialized: Cell<bool>
-    }
-
-    impl Default for FolderView {
-        fn default() -> Self {
-            Self {
-                show_sidebar: TemplateChild::default(),
-                path_widget: TemplateChild::default(),
-                back_btn: TemplateChild::default(),
-                forward_btn: TemplateChild::default(),
-                // Search & filter widgets
-                sort_dir: TemplateChild::default(),
-                sort_dir_btn: TemplateChild::default(),
-                sort_mode: TemplateChild::default(),
-                search_btn: TemplateChild::default(),
-                search_bar: TemplateChild::default(),
-                search_entry: TemplateChild::default(),
-                // Content
-                list_view: TemplateChild::default(),
-                // Search & filter models
-                search_filter: gtk::CustomFilter::default(),
-                sorter: gtk::CustomSorter::default(),
-                // Keep last length to optimise search
-                // If search term is now longer, only further filter still-matching
-                // items.
-                // If search term is now shorter, only check non-matching items to see
-                // if they now match.
-                last_search_len: Cell::new(0),
-                library: OnceCell::new(),
-                collapsed: Cell::new(false),
-                initialized: Cell::new(false)
-            }
-        }
     }
 
     #[glib::object_subclass]

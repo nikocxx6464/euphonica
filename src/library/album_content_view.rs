@@ -7,7 +7,7 @@ use std::{
     rc::Rc,
 };
 use time::{format_description, Date};
-
+use derivative::Derivative;
 use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
@@ -21,13 +21,13 @@ mod imp {
 
     use ashpd::desktop::file_chooser::SelectedFiles;
     use async_channel::Sender;
-    use gio::ListStore;
 
     use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton, utils};
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-content-view.ui")]
     pub struct AlbumContentView {
         #[template_child]
@@ -81,9 +81,12 @@ mod imp {
         #[template_child]
         pub sel_none: TemplateChild<gtk::Button>,
 
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub sel_model: gtk::MultiSelection,
-        pub artist_tags: ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<ArtistTag>()"))]
+        pub artist_tags: gio::ListStore,
 
         pub library: OnceCell<Library>,
         pub album: RefCell<Option<Album>>,
@@ -94,48 +97,6 @@ mod imp {
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
         pub filepath_sender: OnceCell<Sender<String>>,
         pub cover_source: Cell<CoverSource>
-    }
-
-    impl Default for AlbumContentView {
-        fn default() -> Self {
-            Self {
-                cover: TemplateChild::default(),
-                title: TemplateChild::default(),
-                artists_box: TemplateChild::default(),
-                rating: TemplateChild::default(),
-                rating_readout: TemplateChild::default(),
-                release_date: TemplateChild::default(),
-                track_count: TemplateChild::default(),
-                infobox_spinner: TemplateChild::default(),
-                infobox_revealer: TemplateChild::default(),
-                collapse_infobox: TemplateChild::default(),
-                wiki_text: TemplateChild::default(),
-                wiki_link: TemplateChild::default(),
-                wiki_attrib: TemplateChild::default(),
-                runtime: TemplateChild::default(),
-                content_spinner: TemplateChild::default(),
-                content: TemplateChild::default(),
-                song_list: gio::ListStore::new::<Song>(),
-                sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
-                replace_queue: TemplateChild::default(),
-                queue_split_button: TemplateChild::default(),
-                replace_queue_text: TemplateChild::default(),
-                queue_split_button_content: TemplateChild::default(),
-                add_to_playlist: TemplateChild::default(),
-                sel_all: TemplateChild::default(),
-                sel_none: TemplateChild::default(),
-                library: OnceCell::new(),
-                album: RefCell::new(None),
-                window: OnceCell::new(),
-                artist_tags: ListStore::new::<ArtistTag>(),
-                bindings: RefCell::new(Vec::new()),
-                cover_signal_id: RefCell::new(None),
-                cache: OnceCell::new(),
-                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-                filepath_sender: OnceCell::new(),
-                cover_source: Cell::default()
-            }
-        }
     }
 
     #[glib::object_subclass]
