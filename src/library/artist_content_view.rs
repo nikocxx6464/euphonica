@@ -256,6 +256,7 @@ mod imp {
                             if spinner.visible_child_name().unwrap() != "spinner" {
                                 spinner.set_visible_child_name("spinner");
                             }
+                            spinner.set_visible(true);
                             library.clear_artist_avatar(artist.get_name());
                             library.refetch_artist_metadata(&artist);
                         }
@@ -323,33 +324,38 @@ impl ArtistContentView {
         let stack = self.imp().infobox_spinner.get();
         // If the current album is the "untitled" one (i.e. for songs without an album tag),
         // don't attempt to update metadata.
-        let cache = self.imp().cache.get().unwrap().clone();
         if artist.get_name().is_empty() {
-            if stack.visible_child_name().unwrap() != "content" {
-                stack.set_visible_child_name("content");
-            }
+            stack.set_visible(false);
         } else {
+            let cache = self.imp().cache.get().unwrap().clone();
             let bio_text = self.imp().bio_text.get();
             let bio_link = self.imp().bio_link.get();
             let bio_attrib = self.imp().bio_attrib.get();
             if let Some(meta) = cache.load_cached_artist_meta(artist.get_info()) {
                 if let Some(bio) = meta.bio {
+                    stack.set_visible(true);
+                    bio_text.set_visible(true);
                     bio_text.set_label(&bio.content);
                     if let Some(url) = bio.url.as_ref() {
                         bio_link.set_visible(true);
                         bio_link.set_uri(url);
                     } else {
                         bio_link.set_visible(false);
+                        bio_link.set_uri("");
                     }
-                    bio_attrib.set_label(&bio.attribution);
                     bio_attrib.set_visible(true);
+                    bio_attrib.set_label(&bio.attribution);
+                    if stack.visible_child_name().unwrap() != "content" {
+                        stack.set_visible_child_name("content");
+                    }
                 } else {
+                    stack.set_visible(false);
+                    bio_text.set_visible(false);
                     bio_text.set_label("");
-                    bio_link.set_visible(false);
                     bio_attrib.set_visible(false);
-                }
-                if stack.visible_child_name().unwrap() != "content" {
-                    stack.set_visible_child_name("content");
+                    bio_attrib.set_label("");
+                    bio_link.set_visible(false);
+                    bio_link.set_uri("");
                 }
             }
         }
@@ -737,6 +743,7 @@ impl ArtistContentView {
                 self.imp().stack.set_visible_child_name("spinner");
             }
         }
+        self.imp().infobox_spinner.set_visible(true);
     }
 
     fn add_album(&self, album: Album) {

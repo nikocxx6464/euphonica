@@ -243,6 +243,7 @@ mod imp {
                             if spinner.visible_child_name().unwrap() != "spinner" {
                                 spinner.set_visible_child_name("spinner");
                             }
+                            spinner.set_visible(true);
                             library.clear_cover(album.get_folder_uri());
                             library.refetch_album_metadata(&album);
                         }
@@ -342,13 +343,11 @@ impl AlbumContentView {
     }
 
     fn update_meta(&self, album: &Album) {
-        let infobox_spinner = self.imp().infobox_spinner.get();
+        let stack = self.imp().infobox_spinner.get();
         // If the current album is the "untitled" one (i.e. for songs without an album tag),
         // don't attempt to update metadata.
         if album.get_title().is_empty() {
-            if infobox_spinner.visible_child_name().unwrap() != "content" {
-                infobox_spinner.set_visible_child_name("content");
-            }
+            stack.set_visible(false);
         } else {
             let cache = self.imp().cache.get().unwrap().clone();
             let wiki_text = self.imp().wiki_text.get();
@@ -356,22 +355,29 @@ impl AlbumContentView {
             let wiki_attrib = self.imp().wiki_attrib.get();
             if let Some(meta) = cache.load_cached_album_meta(album.get_info()) {
                 if let Some(wiki) = meta.wiki {
+                    stack.set_visible(true);
+                    wiki_text.set_visible(true);
                     wiki_text.set_label(&wiki.content);
                     if let Some(url) = wiki.url.as_ref() {
                         wiki_link.set_visible(true);
                         wiki_link.set_uri(url);
                     } else {
                         wiki_link.set_visible(false);
+                        wiki_link.set_uri("");
                     }
-                    wiki_attrib.set_label(&wiki.attribution);
                     wiki_attrib.set_visible(true);
+                    wiki_attrib.set_label(&wiki.attribution);
+                    if stack.visible_child_name().unwrap() != "content" {
+                        stack.set_visible_child_name("content");
+                    }
                 } else {
+                    stack.set_visible(false);
+                    wiki_text.set_visible(false);
                     wiki_text.set_label("");
-                    wiki_link.set_visible(false);
                     wiki_attrib.set_visible(false);
-                }
-                if infobox_spinner.visible_child_name().unwrap() != "content" {
-                    infobox_spinner.set_visible_child_name("content");
+                    wiki_attrib.set_label("");
+                    wiki_link.set_visible(false);
+                    wiki_link.set_uri("");
                 }
             }
         }
@@ -811,6 +817,7 @@ impl AlbumContentView {
         if infobox_spinner.visible_child_name().unwrap() != "spinner" {
             infobox_spinner.set_visible_child_name("spinner");
         }
+        infobox_spinner.set_visible(true);
     }
 
     fn add_songs(&self, songs: &[Song]) {

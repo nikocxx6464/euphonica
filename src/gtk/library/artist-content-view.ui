@@ -32,10 +32,15 @@
                 <setter object="replace_queue_text" property="visible">false</setter>
                 <setter object="append_queue_text" property="visible">false</setter>
                 <setter object="add_to_playlist" property="collapsed">true</setter>
+
+                <setter object="name" property="halign">fill</setter>
+                <setter object="name" property="justify">center</setter>
+                <setter object="metadata_box" property="halign">center</setter>
               </object>
             </child>
             <property name="child">
               <object class="GtkBox">
+                <property name="valign">start</property>
                 <property name="orientation">1</property>
                 <property name="hexpand">true</property>
                 <child>
@@ -72,7 +77,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkBox">
+                              <object class="GtkBox" id="metadata_box">
                                 <property name="spacing">12</property>
                                 <child>
                                   <object class="GtkBox">

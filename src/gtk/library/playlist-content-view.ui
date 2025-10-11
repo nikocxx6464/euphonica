@@ -99,10 +99,15 @@
                 <setter object="replace_queue_text" property="visible">false</setter>
                 <setter object="append_queue_text" property="visible">false</setter>
                 <setter object="edit_text" property="visible">false</setter>
+
+                <setter object="title" property="halign">fill</setter>
+                <setter object="title" property="justify">center</setter>
+                <setter object="metadata_box" property="halign">center</setter>
               </object>
             </child>
             <property name="child">
               <object class="GtkBox">
+                <property name="valign">start</property>
                 <property name="orientation">1</property>
                 <property name="hexpand">true</property>
                 <child>
@@ -160,7 +165,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkBox">
+                              <object class="GtkBox" id="metadata_box">
                                 <property name="spacing">12</property>
                                 <child>
                                   <object class="GtkBox">
@@ -399,10 +404,6 @@
                           </object>
                         </child>
                       </object>
-                    </child>
-
-                    <child>
-                      <object class="GtkSeparator"/>
                     </child>
 
                     <child>
