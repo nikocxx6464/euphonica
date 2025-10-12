@@ -69,6 +69,13 @@ mod imp {
         pub ordering_model: OnceCell<gio::ListModel>,
 
         #[template_child]
+        pub limit_mode: TemplateChild<gtk::DropDown>,
+        #[template_child]
+        pub limit: TemplateChild<gtk::SpinButton>,
+        #[template_child]
+        pub limit_unit: TemplateChild<gtk::Label>,
+
+        #[template_child]
         pub track_count: TemplateChild<gtk::Label>,
         #[template_child]
         pub runtime: TemplateChild<gtk::Label>,
@@ -122,6 +129,14 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            self.title.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().validate_title();
+                }
+            ));
+
             // TODO: find another way as observe_children() is very inefficient
             let _ = self.rules_model.set(
                 self.rules_box.observe_children()
@@ -163,6 +178,26 @@ mod imp {
                     ordering_box.append(&OrderingButton::new(&ordering_box));
                 }
             ));
+
+            self.limit_mode
+                .bind_property(
+                    "selected",
+                    &self.limit.get(),
+                    "visible"
+                )
+                .transform_to(|_, idx: u32| { Some(idx > 0) })
+                .sync_create()
+                .build();
+
+            self.limit_mode
+                .bind_property(
+                    "selected",
+                    &self.limit_unit.get(),
+                    "visible"
+                )
+                .transform_to(|_, idx: u32| { Some(idx > 0) })
+                .sync_create()
+                .build();
 
             let infobox_revealer = self.infobox_revealer.get();
             let collapse_infobox = self.collapse_infobox.get();
@@ -391,6 +426,23 @@ impl DynamicPlaylistEditorView {
         // ));
     }
 
+    fn validate_title(&self) {
+        let entry = self.imp().title.get();
+        let is_valid = entry.text_length() > 0;
+        let old_valid = self.imp().title_valid.replace(is_valid);
+
+
+        if !is_valid && !entry.has_css_class("error") {
+            entry.add_css_class("error");
+        } else if is_valid && entry.has_css_class("error") {
+            entry.remove_css_class("error");
+        }
+
+        if old_valid != is_valid {
+            self.update_sensitivity();
+        }
+    }
+
     fn validate_rules(&self) {
         let model = self.imp().rules_model.get().unwrap();
         let n_items = model.n_items();
@@ -417,8 +469,7 @@ impl DynamicPlaylistEditorView {
     }
 
     fn update_sensitivity(&self) {
-        // let sensitive = self.imp().rules_valid.get() && self.imp().title_valid.get();
-        let sensitive = self.imp().rules_valid.get();
+        let sensitive = self.imp().rules_valid.get() && self.imp().title_valid.get();
         self.imp().save_btn.set_sensitive(sensitive);
         self.imp().refresh_btn.set_sensitive(sensitive);
     }

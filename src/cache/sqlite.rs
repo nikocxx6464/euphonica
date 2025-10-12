@@ -48,6 +48,9 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     `play_count` INTEGER not null,
     `rules` BLOB not null,
     `ordering` BLOB not null,
+    `last_refresh` DATETIME null,
+    `auto_refresh` VARCHAR not null,
+    `limit` INTEGER null,
 
     primary key(`name`)
 );
@@ -235,6 +238,9 @@ create table if not exists `queries` (
     `play_count` INTEGER not null,
     `rules` BLOB not null,
     `ordering` BLOB not null,
+    `last_refresh` DATETIME null,
+    `auto_refresh` VARCHAR not null,
+    `limit` INTEGER null,
     primary key(`name`)
 );
 
@@ -743,14 +749,25 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist) -> Result<(), Error> {
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     tx.execute("delete from queries where name = ?1", params![&dp.name]).map_err(|e| Error::DbError(e))?;
     tx.execute(
-        "insert into queries (name, description, last_modified, play_count, rules, ordering) values (?1,?2,?3,?4,?5,?6)",
+        "insert into queries (
+name,
+description,
+last_modified,
+play_count,
+rules,
+ordering,
+auto_refresh,
+limit
+) values (?1,?2,?3,?4,?5,?6,?7,?8)",
         params![
             &dp.name,
             &dp.description,
             OffsetDateTime::now_utc(),
             0,
             bson::to_vec(&bson::to_document(&dp.rules).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
-            bson::to_vec(&bson::to_document(&dp.ordering).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+            bson::to_vec(&bson::to_document(&dp.ordering).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
+            &dp.auto_refresh.to_str(),
+            &dp.limit
         ]
     ).map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;

@@ -1,4 +1,5 @@
 use std::borrow::Cow;
+use std::str::FromStr;
 
 use mpd::{search::{Operation as TagOperation}, Query, Term};
 use serde::{Deserialize, Serialize};
@@ -10,6 +11,50 @@ pub enum Ordering {
     FirstModified,
     DescRating,
     AscRating
+}
+
+#[derive(Default, Debug, Copy, Clone, Serialize, Deserialize)]
+pub enum AutoRefresh {
+    #[default]
+    #[serde(rename = "none")]
+    None,
+    #[serde(rename = "hourly")]
+    Hourly,
+    #[serde(rename = "daily")]
+    Daily,
+    #[serde(rename = "weekly")]
+    Weekly,
+    #[serde(rename = "monthly")]
+    Monthly,
+    #[serde(rename = "yearly")]
+    Yearly
+}
+
+impl FromStr for AutoRefresh {
+    type Err = ();
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "none" => Ok(Self::None),
+            "hourly" => Ok(Self::Hourly),
+            "weekly" => Ok(Self::Weekly),
+            "monthly" => Ok(Self::Monthly),
+            "yearly" => Ok(Self::Yearly),
+            _ => Err(())
+        }
+    }
+}
+
+impl AutoRefresh {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Hourly => "hourly",
+            Self::Daily => "daily",
+            Self::Weekly => "weekly",
+            Self::Monthly => "monthly",
+            Self::Yearly => "yearly"
+        }
+    }
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -120,5 +165,7 @@ pub struct DynamicPlaylist {
     pub last_queued: String,
     pub play_count: isize,
     pub rules: Vec<Rule>,
-    pub ordering: Vec<Ordering>
+    pub ordering: Vec<Ordering>,
+    pub auto_refresh: AutoRefresh,
+    pub limit: Option<u32>
 }

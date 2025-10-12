@@ -51,12 +51,13 @@
             <child>
               <object class="AdwBreakpoint">
                 <condition>max-width: 550px</condition>
-                <setter object="cover_box" property="halign">center</setter>
+                <setter object="fetch_options" property="orientation">1</setter>
                 <setter object="infobox" property="orientation">1</setter>
               </object>
             </child>
             <property name="child">
               <object class="GtkBox">
+                <property name="valign">start</property>
                 <property name="orientation">1</property>
                 <property name="hexpand">true</property>
                 <child>
@@ -104,15 +105,13 @@
                                     <property name="placeholder-text" translatable="true">Playlist name</property>
                                     <style>
                                       <class name="title-2"/>
+                                      <class name="error"/> <!-- Upon creation the title is empty which is invalid -->
                                     </style>
                                   </object>
                                 </child>
                                 <child>
                                   <object class="GtkEntry" id="description">
                                     <property name="placeholder-text" translatable="true">Description</property>
-                                    <style>
-                                      <class name="caption"/>
-                                    </style>
                                   </object>
                                 </child>
                               </object>
@@ -154,8 +153,8 @@
                                 <child>
                                   <object class="AdwWrapBox" id="rules_box">
                                     <property name="hexpand">true</property>
-                                    <property name="child-spacing">3</property>
-                                    <property name="line-spacing">3</property>
+                                    <property name="child-spacing">6</property>
+                                    <property name="line-spacing">6</property>
                                   </object>
                                 </child>
                               </object>
@@ -196,6 +195,73 @@
                                 </child>
                               </object>
                             </child>
+                            <child>
+                              <object class="GtkBox" id="fetch_options">
+                                <property name="spacing">6</property>
+                                <child>
+                                  <object class="GtkDropDown" id="refresh_schedule">
+                                    <property name="halign">start</property>
+                                    <property name="model">
+                                      <object class="GtkStringList">
+                                        <items>
+                                          <item translatable="yes">No auto-refresh</item>
+                                          <item translatable="yes">Refresh hourly</item>
+                                          <item translatable="yes">Refresh daily</item>
+                                          <item translatable="yes">Refresh weekly</item>
+                                          <item translatable="yes">Refresh monthly</item>
+                                          <item translatable="yes">Refresh yearly</item>
+                                        </items>
+                                      </object>
+                                    </property>
+                                  </object>
+                                </child>
+                                <child>
+                                  <object class="GtkBox">
+                                    <property name="spacing">6</property>
+                                    <child>
+                                      <object class="GtkBox">
+                                        <style>
+                                          <class name="linked"/>
+                                        </style>
+                                        <child>
+                                          <object class="GtkDropDown" id="limit_mode">
+                                            <property name="model">
+                                              <object class="GtkStringList">
+                                                <items>
+                                                  <item translatable="yes">No limit</item>
+                                                  <item translatable="yes">Fetch first</item>
+                                                </items>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                        <child>
+                                          <object class="GtkSpinButton" id="limit">
+                                            <property name="visible">false</property>
+                                            <property name="digits">0</property>
+                                            <property name="adjustment">
+                                              <object class="GtkAdjustment">
+                                                <property name="lower">1</property>
+                                                <property name="upper">65536</property> <!-- Any more kind of defeats the purpose of a limit -->
+                                                <property name="value">10</property>
+                                                <property name="page-increment">1</property>
+                                                <property name="step-increment">10</property>
+                                              </object>
+                                            </property>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
+                                    <child>
+                                      <object class="GtkLabel" id="limit_unit">
+                                        <property name="label" translatable="true">songs</property>
+                                        <property name="visible">false</property>
+                                      </object>
+                                    </child>
+                                  </object>
+                                </child>
+                              </object>
+                            </child>
                           </object>
                         </child>
                       </object>
@@ -209,41 +275,33 @@
                       <class name="padding-6"/>
                     </style>
                     <property name="start-widget">
-                      <object class="GtkBox" id="action_btns">
-                        <property name="spacing">3</property>
+                      <object class="GtkBox" id="counts">
+                        <property name="spacing">6</property>
                         <child>
-                          <object class="GtkLabel">
-                            <property name="label" translatable="true">Songs:</property>
-                            <style>
-                              <class name="caption-heading"/>
-                            </style>
+                          <object class="GtkImage">
+                            <property name="icon-name">music-note-single-symbolic</property>
                           </object>
                         </child>
                         <child>
                           <object class="GtkLabel" id="track_count">
                             <property name="label">0</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkSeparator">
                             <style>
-                              <class name="caption"/>
+                              <class name="spacer"/>
                             </style>
                           </object>
                         </child>
                         <child>
-                          <object class="GtkSeparator"/>
-                        </child>
-                        <child>
-                          <object class="GtkLabel">
-                            <property name="label" translatable="true">Runtime:</property>
-                            <style>
-                              <class name="caption-heading"/>
-                            </style>
+                          <object class="GtkImage">
+                            <property name="icon-name">hourglass-symbolic</property>
                           </object>
                         </child>
                         <child>
                           <object class="GtkLabel" id="runtime">
                             <property name="label">00:00</property>
-                            <style>
-                              <class name="caption"/>
-                            </style>
                           </object>
                         </child>
                       </object>
