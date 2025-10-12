@@ -8,7 +8,6 @@
         <property name="model">
           <object class="GtkStringList">
             <items>
-              <item translatable="yes">None</item>
               <item translatable="yes">Random</item>
               <item translatable="yes">Last modified</item>
               <item translatable="yes">First modified</item>

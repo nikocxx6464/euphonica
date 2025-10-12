@@ -417,19 +417,19 @@ impl RuleButton {
                 },
                 "Any tag" => {
                     let op = self.get_tag_op();
-                    Some(Rule::Query(QueryLhs::Any(op), self.imp().lhs.text().to_string()))
+                    Some(Rule::Query(QueryLhs::Any(op), self.imp().rhs.text().to_string()))
                 }
                 "Tag: Album" => {
                     let op = self.get_tag_op();
-                    Some(Rule::Query(QueryLhs::Album(op), self.imp().lhs.text().to_string()))
+                    Some(Rule::Query(QueryLhs::Album(op), self.imp().rhs.text().to_string()))
                 }
                 "Tag: Artist" => {
                     let op = self.get_tag_op();
-                    Some(Rule::Query(QueryLhs::Artist(op), self.imp().lhs.text().to_string()))
+                    Some(Rule::Query(QueryLhs::Artist(op), self.imp().rhs.text().to_string()))
                 }
                 "Tag: AlbumArtist" => {
                     let op = self.get_tag_op();
-                    Some(Rule::Query(QueryLhs::AlbumArtist(op), self.imp().lhs.text().to_string()))
+                    Some(Rule::Query(QueryLhs::AlbumArtist(op), self.imp().rhs.text().to_string()))
                 }
                 _ => unimplemented!()
             }

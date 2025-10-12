@@ -3,6 +3,7 @@ use std::str::FromStr;
 
 use mpd::{search::{Operation as TagOperation}, Query, Term};
 use serde::{Deserialize, Serialize};
+use time::OffsetDateTime;
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Ordering {
@@ -161,11 +162,11 @@ pub enum Rule {
 pub struct DynamicPlaylist {
     pub name: String,
     pub description: String,
-    pub last_modified: String,
-    pub last_queued: String,
-    pub play_count: isize,
+    pub last_queued: Option<i64>,
+    pub play_count: usize,
     pub rules: Vec<Rule>,
     pub ordering: Vec<Ordering>,
     pub auto_refresh: AutoRefresh,
+    pub last_refresh: Option<i64>,
     pub limit: Option<u32>
 }

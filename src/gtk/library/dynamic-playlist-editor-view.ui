@@ -123,29 +123,6 @@
                             <property name="orientation">1</property>
                             <property name="spacing">6</property>
                             <property name="hexpand">true</property>
-
-                            <child>
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="true">Rules</property>
-                                    <style>
-                                      <class name="heading"/>
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="add_rule_btn">
-                                    <property name="valign">center</property>
-                                    <property name="icon-name">list-add-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                  </object>
-                                </child>
-                              </object>
-                            </child>
                             <child>
                               <object class="GtkScrolledWindow">
                                 <property name="propagate-natural-height">true</property>
@@ -155,33 +132,35 @@
                                     <property name="hexpand">true</property>
                                     <property name="child-spacing">6</property>
                                     <property name="line-spacing">6</property>
+
+                                    <child>
+                                      <object class="GtkButton" id="add_rule_btn">
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">list-add-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel">
+                                                <property name="label" translatable="true">Rule</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                               </object>
                             </child>
 
                             <child>
-                              <object class="GtkBox">
-                                <property name="spacing">6</property>
-                                <child>
-                                  <object class="GtkLabel">
-                                    <property name="label" translatable="true">Ordering</property>
-                                    <style>
-                                      <class name="heading"/>
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkButton" id="add_ordering_btn">
-                                    <property name="valign">center</property>
-                                    <property name="icon-name">list-add-symbolic</property>
-                                    <style>
-                                      <class name="circular"/>
-                                    </style>
-                                  </object>
-                                </child>
-                              </object>
+                              <object class="GtkSeparator"/>
                             </child>
+
                             <child>
                               <object class="GtkScrolledWindow">
                                 <property name="propagate-natural-height">true</property>
@@ -189,12 +168,37 @@
                                 <child>
                                   <object class="AdwWrapBox" id="ordering_box">
                                     <property name="hexpand">true</property>
-                                    <property name="child-spacing">3</property>
-                                    <property name="line-spacing">3</property>
+                                    <property name="child-spacing">6</property>
+                                    <property name="line-spacing">6</property>
+
+                                    <child>
+                                      <object class="GtkButton" id="add_ordering_btn">
+                                        <child>
+                                          <object class="GtkBox">
+                                            <property name="spacing">6</property>
+                                            <child>
+                                              <object class="GtkImage">
+                                                <property name="icon-name">list-add-symbolic</property>
+                                              </object>
+                                            </child>
+                                            <child>
+                                              <object class="GtkLabel">
+                                                <property name="label" translatable="true">Ordering</property>
+                                              </object>
+                                            </child>
+                                          </object>
+                                        </child>
+                                      </object>
+                                    </child>
                                   </object>
                                 </child>
                               </object>
                             </child>
+
+                            <child>
+                              <object class="GtkSeparator"/>
+                            </child>
+
                             <child>
                               <object class="GtkBox" id="fetch_options">
                                 <property name="spacing">6</property>

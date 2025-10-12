@@ -9,9 +9,9 @@ use std::{
 use time::{format_description, Date};
 use derivative::Derivative;
 
-use super::{artist_tag::ArtistTag, rule_button::RuleButton, AlbumSongRow, Library};
+use super::{artist_tag::ArtistTag, ordering_button::OrderingButton, rule_button::RuleButton, AlbumSongRow, Library};
 use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::{DynamicPlaylistSongRow, PlaylistSongRow}, utils::format_secs_as_duration, window::EuphonicaWindow
+    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{dynamic_playlist::{AutoRefresh, Ordering, Rule}, Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::{DynamicPlaylistSongRow, PlaylistSongRow}, utils::format_secs_as_duration, window::EuphonicaWindow
 };
 
 #[derive(Default, Debug, Clone)]
@@ -66,7 +66,10 @@ mod imp {
         pub add_ordering_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub ordering_box: TemplateChild<adw::WrapBox>,
-        pub ordering_model: OnceCell<gio::ListModel>,
+        pub orderings_model: OnceCell<gio::ListModel>,
+
+        #[template_child]
+        pub refresh_schedule: TemplateChild<gtk::DropDown>,
 
         #[template_child]
         pub limit_mode: TemplateChild<gtk::DropDown>,
@@ -145,10 +148,14 @@ mod imp {
             self.add_rule_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| {
+                move |add_btn| {
                     let rules_box = this.rules_box.get();
                     let btn = RuleButton::new(&rules_box);
                     rules_box.append(&btn);
+                    rules_box.reorder_child_after(
+                        add_btn,
+                        Some(&btn)
+                    );
                     btn.connect_notify_local(
                         Some("is-valid"),
                         clone!(
@@ -166,16 +173,21 @@ mod imp {
             ));
 
             // TODO: find another way as observe_children() is very inefficient
-            let _ = self.ordering_model.set(
+            let _ = self.orderings_model.set(
                 self.ordering_box.observe_children()
             );
 
             self.add_ordering_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
-                move |_| {
+                move |add_btn| {
                     let ordering_box = this.ordering_box.get();
-                    ordering_box.append(&OrderingButton::new(&ordering_box));
+                    let btn = OrderingButton::new(&ordering_box);
+                    ordering_box.append(&btn);
+                    ordering_box.reorder_child_after(
+                        add_btn,
+                        Some(&btn)
+                    );
                 }
             ));
 
@@ -198,6 +210,14 @@ mod imp {
                 .transform_to(|_, idx: u32| { Some(idx > 0) })
                 .sync_create()
                 .build();
+
+            self.refresh_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    dbg!(this.obj().build_dynamic_playlist());
+                }
+            ));
 
             let infobox_revealer = self.infobox_revealer.get();
             let collapse_infobox = self.collapse_infobox.get();
@@ -446,7 +466,8 @@ impl DynamicPlaylistEditorView {
     fn validate_rules(&self) {
         let model = self.imp().rules_model.get().unwrap();
         let n_items = model.n_items();
-        if n_items == 0 {
+        // There's always the "add rule" button
+        if n_items == 1 {
             let old_rules_valid = self.imp().rules_valid.replace(false);
             if old_rules_valid {
                 self.update_sensitivity();
@@ -455,9 +476,11 @@ impl DynamicPlaylistEditorView {
         }
         let mut per_rule_is_valid: Vec<bool> = Vec::with_capacity(n_items as usize);
         for i in 0..n_items {
-            per_rule_is_valid.push(
-                model.item(i).and_downcast_ref::<RuleButton>().unwrap().is_valid()
-            );
+            if let Some(rule_btn) = model.item(i).and_downcast_ref::<RuleButton>() {
+                per_rule_is_valid.push(
+                    rule_btn.is_valid()
+                );
+            }
         }
         let new_rules_valid = per_rule_is_valid
             .iter()
@@ -469,9 +492,10 @@ impl DynamicPlaylistEditorView {
     }
 
     fn update_sensitivity(&self) {
-        let sensitive = self.imp().rules_valid.get() && self.imp().title_valid.get();
-        self.imp().save_btn.set_sensitive(sensitive);
-        self.imp().refresh_btn.set_sensitive(sensitive);
+        let rules_valid = self.imp().rules_valid.get();
+        let title_valid = self.imp().title_valid.get();
+        self.imp().save_btn.set_sensitive(rules_valid && title_valid);
+        self.imp().refresh_btn.set_sensitive(rules_valid);
     }
 
     fn clear_cover(&self) {
@@ -497,6 +521,69 @@ impl DynamicPlaylistEditorView {
             .load_cached_playlist_cover(&dp.name, false) {
                 self.imp().cover.set_paintable(Some(&tex));
             }
+    }
+
+    fn get_refresh_schedule(&self) -> AutoRefresh {
+        // TODO: gettext
+        match self
+            .imp()
+            .refresh_schedule
+            .model()
+            .and_downcast::<gtk::StringList>()
+            .unwrap()
+            .string(self.imp().refresh_schedule.selected())
+            .unwrap()
+            .as_str()
+        {
+            "No auto-refresh" => AutoRefresh::None,
+            "Refresh hourly" => AutoRefresh::Hourly,
+            "Refresh daily" => AutoRefresh::Daily,
+            "Refresh weekly" => AutoRefresh::Weekly,
+            "Refresh monthly" => AutoRefresh::Monthly,
+            "Refresh yearly" => AutoRefresh::Yearly,
+            _ => unimplemented!()
+        }
+    }
+
+    fn build_dynamic_playlist(&self) -> DynamicPlaylist {
+        let rules_model = self.imp().rules_model.get().unwrap();
+        let n_rules = rules_model.n_items() as usize;
+        let mut rules: Vec<Rule> = Vec::with_capacity(n_rules - 1);  // Except the "Add Rule" button
+        for i in 0..n_rules {
+            if let Some(rule_btn) = rules_model.item(i as u32).and_downcast_ref::<RuleButton>() {
+                rules.push(
+                    rule_btn.get_rule().unwrap()
+                );
+            }
+        }
+
+        let orderings_model = self.imp().orderings_model.get().unwrap();
+        let n_orderings = orderings_model.n_items() as usize;
+        let mut ordering: Vec<Ordering> = Vec::with_capacity(n_orderings - 1);  // Except the "Add Rule" button
+        for i in 0..n_orderings {
+            if let Some(ordering_btn) = orderings_model.item(i as u32).and_downcast::<OrderingButton>() {
+                ordering.push(
+                    ordering_btn.get_ordering().unwrap()
+                );
+            }
+        }
+        let limit: Option<u32> = if self.imp().limit_mode.selected() > 0 {
+            Some(self.imp().limit.adjustment().value().round() as u32)
+        } else {
+            None
+        };
+
+        DynamicPlaylist {
+            name: self.imp().title.text().to_string(),
+            description: self.imp().description.text().to_string(),
+            last_queued: None,
+            play_count: 0,
+            rules,
+            ordering,
+            auto_refresh: self.get_refresh_schedule(),
+            last_refresh: None,
+            limit
+        }
     }
 
     pub fn bind(&self, dp: DynamicPlaylist) {

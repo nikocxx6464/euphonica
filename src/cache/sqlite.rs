@@ -748,25 +748,40 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
     tx.execute("delete from queries where name = ?1", params![&dp.name]).map_err(|e| Error::DbError(e))?;
+
+    let last_queued = dp
+        .last_queued
+        .map(|secs| {OffsetDateTime::from_unix_timestamp(secs).ok()})
+        .flatten();
+
+    let last_refresh = dp
+        .last_refresh
+        .map(|secs| {OffsetDateTime::from_unix_timestamp(secs).ok()})
+        .flatten();
+
     tx.execute(
         "insert into queries (
 name,
 description,
 last_modified,
+last_queued,
 play_count,
 rules,
 ordering,
 auto_refresh,
+last_refresh,
 limit
-) values (?1,?2,?3,?4,?5,?6,?7,?8)",
+) values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
         params![
             &dp.name,
             &dp.description,
             OffsetDateTime::now_utc(),
-            0,
+            last_queued,
+            &dp.play_count,
             bson::to_vec(&bson::to_document(&dp.rules).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
             bson::to_vec(&bson::to_document(&dp.ordering).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
             &dp.auto_refresh.to_str(),
+            last_refresh,
             &dp.limit
         ]
     ).map_err(|e| Error::DbError(e))?;
