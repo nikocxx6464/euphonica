@@ -2,16 +2,46 @@ use std::borrow::Cow;
 use std::str::FromStr;
 
 use mpd::{search::{Operation as TagOperation}, Query, Term};
+use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use time::OffsetDateTime;
+use strum::EnumCount;
+use strum_macros::{EnumCount as EnumCountMacro, EnumIter, VariantArray};
 
-#[derive(Serialize, Deserialize, Debug, Clone)]
+#[derive(Serialize, Deserialize, Debug, Copy, Clone, EnumIter, EnumCountMacro, VariantArray, PartialEq, Eq)]
 pub enum Ordering {
-    Random,
-    LastModified,
-    FirstModified,
+    AlbumTrack,
+    AscReleaseDate,
+    DescReleaseDate,
+    AscRating,
     DescRating,
-    AscRating
+    FirstModified,
+    LastModified,
+    Random
+}
+
+impl Ordering {
+    pub fn model() -> &'static [&'static str] {
+        // TODO: gettext
+        // Enforce type to remind myself to add a name here for every new enum type
+        static MODEL: Lazy<[&str; Ordering::COUNT]> = Lazy::new(|| {
+            [
+                "Album & track number",
+                "Asc. Release date",
+                "Desc. Release date",
+                "Asc. rating",
+                "Desc. rating",
+                "First modified",
+                "Last modified",
+                "Random"  // Keep this the last option please
+            ]
+        });
+
+        MODEL.as_ref()
+    }
+
+    pub fn readable_name(&self) -> &'static str {
+        Self::model()[*self as usize]
+    }
 }
 
 #[derive(Default, Debug, Copy, Clone, Serialize, Deserialize)]

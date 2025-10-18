@@ -2,30 +2,19 @@
 <interface>
   <requires lib="gtk" version="4.0" />
   <requires lib="Adw" version="1.0" />
-  <template class="EuphonicaOrderingButton" parent="GtkBox">
+  <template class="EuphonicaOrderingButton" parent="GtkButton">
     <child>
-      <object class="GtkDropDown" id="order_by">
-        <property name="model">
-          <object class="GtkStringList">
-            <items>
-              <item translatable="yes">Random</item>
-              <item translatable="yes">Last modified</item>
-              <item translatable="yes">First modified</item>
-              <item translatable="yes">Desc. rating</item>
-              <item translatable="yes">Asc. rating</item>
-            </items>
+      <object class="GtkBox">
+        <property name="spacing">6</property>
+        <child>
+          <object class="GtkLabel" id="label"/>
+        </child>
+        <child>
+          <object class="GtkImage">
+            <property name="icon-name">cross-small-symbolic</property>
           </object>
-        </property>
+        </child>
       </object>
     </child>
-
-    <child>
-      <object class="GtkButton" id="delete">
-        <property name="icon-name">cross-small-symbolic</property>
-      </object>
-    </child>
-    <style>
-      <class name="linked"/>
-    </style>
   </template>
 </interface>

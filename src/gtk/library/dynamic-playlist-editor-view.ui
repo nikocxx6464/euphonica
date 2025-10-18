@@ -172,7 +172,7 @@
                                     <property name="line-spacing">6</property>
 
                                     <child>
-                                      <object class="GtkButton" id="add_ordering_btn">
+                                      <object class="GtkMenuButton" id="add_ordering_btn">
                                         <child>
                                           <object class="GtkBox">
                                             <property name="spacing">6</property>

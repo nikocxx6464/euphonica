@@ -1,5 +1,4 @@
 use adw::subclass::prelude::*;
-use gio::{ActionEntry, SimpleActionGroup, Menu};
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
 use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
@@ -8,10 +7,22 @@ use std::{
 };
 use time::{format_description, Date};
 use derivative::Derivative;
+use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use super::{artist_tag::ArtistTag, ordering_button::OrderingButton, rule_button::RuleButton, AlbumSongRow, Library};
 use crate::{
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState}, client::ClientState, common::{dynamic_playlist::{AutoRefresh, Ordering, Rule}, Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song}, library::{DynamicPlaylistSongRow, PlaylistSongRow}, utils::format_secs_as_duration, window::EuphonicaWindow
+    cache::{
+        placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING},
+        Cache, CacheState
+    },
+    client::ClientState,
+    common::{
+        dynamic_playlist::{AutoRefresh, Ordering, Rule},
+        Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song
+    },
+    library::{DynamicPlaylistSongRow, PlaylistSongRow},
+    utils::format_secs_as_duration,
+    window::EuphonicaWindow
 };
 
 #[derive(Default, Debug, Clone)]
@@ -22,12 +33,15 @@ pub enum CoverPathAction {
     Clear
 }
 
+
+
 mod imp {
     use std::cell::Cell;
 
     use ashpd::desktop::file_chooser::SelectedFiles;
     use async_channel::Sender;
     use gio::ListStore;
+    use once_cell::sync::Lazy;
 
     use crate::{common::DynamicPlaylist, library::{ordering_button::OrderingButton, rule_button::RuleButton}, utils};
 
@@ -63,7 +77,7 @@ mod imp {
         pub rules_box: TemplateChild<adw::WrapBox>,
         pub rules_model: OnceCell<gio::ListModel>,
         #[template_child]
-        pub add_ordering_btn: TemplateChild<gtk::Button>,
+        pub add_ordering_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub ordering_box: TemplateChild<adw::WrapBox>,
         pub orderings_model: OnceCell<gio::ListModel>,
@@ -92,6 +106,7 @@ mod imp {
 
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        pub orderings_menu: gio::Menu,
         pub cover_action: RefCell<CoverPathAction>,
         pub rules_valid: Cell<bool>,
         pub title_valid: Cell<bool>,
@@ -172,24 +187,53 @@ mod imp {
                 }
             ));
 
+            let obj = self.obj();
             // TODO: find another way as observe_children() is very inefficient
-            let _ = self.orderings_model.set(
-                self.ordering_box.observe_children()
-            );
-
-            self.add_ordering_btn.connect_clicked(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |add_btn| {
-                    let ordering_box = this.ordering_box.get();
-                    let btn = OrderingButton::new(&ordering_box);
-                    ordering_box.append(&btn);
-                    ordering_box.reorder_child_after(
-                        add_btn,
-                        Some(&btn)
-                    );
+            let orderings_model = self.ordering_box.observe_children();
+            orderings_model.connect_items_changed(clone!(
+                #[weak]
+                obj,
+                move |_, _, _, _| {
+                    obj.on_ordering_changed();
                 }
             ));
+            let _ = self.orderings_model.set(orderings_model);
+
+            let action_add_ordering = gio::ActionEntry::builder("add-ordering")
+                .parameter_type(Some(&glib::VariantTy::UINT32))
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, idx: Option<&glib::Variant>| {
+                        let ordering_box = obj.imp().ordering_box.get();
+                        let idx = idx.unwrap().get::<u32>().unwrap();
+                        let ordering = Ordering::VARIANTS[idx as usize];
+                        let btn = OrderingButton::new(ordering);
+                        btn.connect_clicked(clone!(
+                            #[weak]
+                            ordering_box,
+                            move |btn| {
+                                ordering_box.remove(btn);
+                            }
+                        ));
+                        ordering_box.append(&btn);
+                        let add_ordering_btn = obj.imp().add_ordering_btn.get();
+                        ordering_box.reorder_child_after(
+                            &add_ordering_btn,
+                            Some(&btn)
+                        );
+                    })
+                )
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = gio::SimpleActionGroup::new();
+            actions.add_action_entries([action_add_ordering]);
+            obj.insert_action_group("dynamic-playlist-editor-view", Some(&actions));
+            // Once the actions are in place we can construct the menu items
+            // Call once to init ordering options menu
+            obj.on_ordering_changed();
+            self.add_ordering_btn.set_menu_model(Some(&self.orderings_menu));
 
             self.limit_mode
                 .bind_property(
@@ -250,7 +294,7 @@ mod imp {
 glib::wrapper! {
     pub struct DynamicPlaylistEditorView(ObjectSubclass<imp::DynamicPlaylistEditorView>)
         @extends gtk::Widget,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gio::ActionGroup, gio::ActionMap;
 }
 
 impl Default for DynamicPlaylistEditorView {
@@ -491,6 +535,54 @@ impl DynamicPlaylistEditorView {
         }
     }
 
+    /// Never allow the ordering section to fall into an invalid state by enforcing
+    /// the following rules:
+    /// 1. If Random is added, disable the Add Ordering button as any further
+    ///    ordering wouldn't make sense. We disable instead of hide to make this clearer.
+    /// 2. If there's any non-Random option, disable the Random option in the Add
+    ///    Ordering dropdown.
+    /// 3. For every non-Random option, disable them in the dropdown too to prevent
+    ///    adding duplicate ones.
+    fn on_ordering_changed(&self) {
+        let orderings = self.imp().orderings_model.get().unwrap();
+        let mut presence = [false; Ordering::COUNT];
+        let mut has_random = false;
+        let mut has_other = false;
+        let n_btns = orderings.n_items() as usize;
+        for i in 0..n_btns {
+            if let Some(ordering_btn) = orderings.item(i as u32).and_downcast::<OrderingButton>() {
+                let ordering = ordering_btn.ordering();
+                presence[ordering as usize] = true;
+                if ordering == Ordering::Random {
+                    has_random = true;
+                } else {
+                    has_other = true;
+                }
+            }
+        }
+
+        // If there's Random, disable Add Ordering button
+        self.imp().add_ordering_btn.set_sensitive(!has_random);
+
+        // Get remaining ordering options
+        if !has_random {
+            let orderings_menu = &self.imp().orderings_menu;
+            orderings_menu.remove_all();
+            for opt in Ordering::iter() {
+                let idx = opt as usize;
+                // Random option only makes sense when no other Ordering has been specified
+                if !presence[idx] && (opt != Ordering::Random || !has_other) {
+                    let item = gio::MenuItem::new(Some(opt.readable_name()), None);
+                    item.set_action_and_target_value(
+                        Some("dynamic-playlist-editor-view.add-ordering"),
+                        Some(&(idx as u32).to_variant())
+                    );
+                    orderings_menu.append_item(&item);
+                }
+            }
+        }
+    }
+
     fn update_sensitivity(&self) {
         let rules_valid = self.imp().rules_valid.get();
         let title_valid = self.imp().title_valid.get();
@@ -562,9 +654,7 @@ impl DynamicPlaylistEditorView {
         let mut ordering: Vec<Ordering> = Vec::with_capacity(n_orderings - 1);  // Except the "Add Rule" button
         for i in 0..n_orderings {
             if let Some(ordering_btn) = orderings_model.item(i as u32).and_downcast::<OrderingButton>() {
-                ordering.push(
-                    ordering_btn.get_ordering().unwrap()
-                );
+                ordering.push(ordering_btn.ordering());
             }
         }
         let limit: Option<u32> = if self.imp().limit_mode.selected() > 0 {
