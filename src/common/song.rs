@@ -1,4 +1,5 @@
 use core::time::Duration;
+use std::cell::Ref;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
@@ -13,6 +14,7 @@ use time::{Date, Month, OffsetDateTime};
 use derivative::Derivative;
 use crate::cache::{get_image_cache_path, sqlite};
 
+use super::Stickers;
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 
 // Mostly for eyecandy
@@ -122,9 +124,12 @@ impl SongInfo {
 }
 
 mod imp {
+    use std::cell::RefCell;
+
     use super::*;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
+        ParamSpecChar
     };
     use once_cell::sync::Lazy;
 
@@ -137,6 +142,7 @@ mod imp {
     #[derive(Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
+        pub stickers: RefCell<Stickers>,
         pub is_playing: Cell<bool>
     }
 
@@ -148,6 +154,7 @@ mod imp {
         fn new() -> Self {
             Self {
                 info: OnceCell::new(),
+                stickers: RefCell::new(Stickers::default()),
                 is_playing: Cell::new(false)
             }
         }
@@ -168,6 +175,7 @@ mod imp {
                     // ParamSpecString::builder("last_mod").build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
+                    ParamSpecChar::builder("rating").read_only().build(),
                     ParamSpecUInt::builder("queue-id").build(),
                     ParamSpecUInt::builder("queue-pos").build(),
                     ParamSpecBoolean::builder("is-queued").read_only().build(),
@@ -202,6 +210,7 @@ mod imp {
                 // The composer part is optional.
                 "artist" => obj.get_artist_tag().to_value(),
                 "duration" => obj.get_duration().to_value(),
+                "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "queue-id" => obj.get_queue_id().to_value(),
                 "queue-pos" => obj.get_queue_pos().to_value(),
                 "is-queued" => obj.is_queued().to_value(),
@@ -234,6 +243,26 @@ glib::wrapper! {
 impl Song {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    pub fn set_stickers(&self, stickers: Stickers) {
+        self.imp().stickers.replace(stickers);
+    }
+
+    pub fn stickers(&self) -> Ref<'_, Stickers> {
+        self.imp().stickers.borrow()
+    }
+
+    pub fn get_rating(&self) -> Option<i8> {
+        self.stickers().rating.clone()
+    }
+
+    pub fn set_rating(&self, new: Option<i8>) {
+        let old = self.get_rating();
+        if new != old {
+            self.imp().stickers.borrow_mut().rating = new;
+            self.notify("rating");
+        }
     }
 
     // ALL of the getters below require that the info field be initialised!

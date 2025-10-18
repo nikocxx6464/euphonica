@@ -3,7 +3,7 @@ use crate::{
     application::EuphonicaApplication,
     cache::{get_image_cache_path, sqlite, Cache, CacheState},
     client::{ClientState, ConnectionState, MpdWrapper},
-    common::{CoverSource, QualityGrade, Song, SongInfo},
+    common::{CoverSource, QualityGrade, Song, SongInfo, Stickers},
     config::APPLICATION_ID,
     meta_providers::models::Lyrics,
     utils::{prettify_audio_format, settings_manager, strip_filename_linux}
@@ -170,7 +170,7 @@ mod imp {
     use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
     use glib::{
         ParamSpec, ParamSpecBoolean, ParamSpecDouble, ParamSpecEnum, ParamSpecFloat, ParamSpecInt,
-        ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpecString, ParamSpecUInt, ParamSpecUInt64, ParamSpecChar
     };
 
     use once_cell::sync::Lazy;
@@ -358,6 +358,7 @@ mod imp {
                     ParamSpecString::builder("title").read_only().build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecString::builder("album").read_only().build(),
+                    ParamSpecChar::builder("rating").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
                     ParamSpecUInt::builder("queue-id").read_only().build(),
                     ParamSpecUInt::builder("queue-len").read_only().build(),  // Always available, even when queue hasn't been fetched yet
@@ -398,6 +399,7 @@ mod imp {
                 "artist" => obj.artist().to_value(),
                 "album" => obj.album().to_value(),
                 "duration" => obj.duration().to_value(),
+                "rating" => obj.rating().unwrap_or(-1).to_value(),
                 "queue-len" => self.queue_len.get().to_value(),
                 "queue-id" => obj.queue_id().unwrap_or(u32::MAX).to_value(),
                 "quality-grade" => obj.quality_grade().to_value(),
@@ -1026,7 +1028,7 @@ impl Player {
 
                 if local_curr_song.as_ref().is_none_or(|song| song.get_queue_id() != new_queue_place.id.0) {
                     needs_refresh = true;
-                    if let Some(new_song) = self.client().get_song_at_queue_id(new_queue_place.id.0) {
+                    if let Some(new_song) = self.client().get_song_at_queue_id(new_queue_place.id.0, true) {
                         // Always fetch as the queue might not have been populated yet
                         local_curr_song.replace(new_song.clone());
                         // If using PipeWire visualiser, might need to restart it
@@ -1062,6 +1064,7 @@ impl Player {
                     self.notify("title");
                     self.notify("artist");
                     self.notify("duration");
+                    self.notify("rating");
                     self.notify("quality-grade");
                     self.notify("format-desc");
                     self.notify("album");
@@ -1114,6 +1117,7 @@ impl Player {
                 self.notify("title");
                 self.notify("artist");
                 self.notify("album");
+                self.notify("rating");
                 self.notify("duration");
                 self.notify("queue-id");
                 self.imp().cover_source.set(CoverSource::Unknown);
@@ -1368,6 +1372,10 @@ impl Player {
         }
     }
 
+    pub fn rating(&self) -> Option<i8> {
+        self.imp().current_song.borrow().as_ref().map(|s| s.get_rating()).flatten()
+    }
+
     pub fn quality_grade(&self) -> QualityGrade {
         if let Some(song) = &*self.imp().current_song.borrow() {
             return song.get_quality_grade();
@@ -1620,6 +1628,20 @@ impl Player {
             sqlite::write_lyrics(&curr_song.get_info(), None).expect("Unable to clear lyrics from DB");
             self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
             let _ = self.imp().lyrics.take();
+        }
+    }
+
+    pub fn rate_current_song(&self, score: Option<i8>) {
+        if let Some(song) = self.imp().current_song.borrow().as_ref() {
+            // Set locally first
+            song.set_rating(score);
+            if let Some(score) = score {
+                self.client().set_sticker("song", song.get_uri(), Stickers::RATING_KEY, &score.to_string());
+            }
+            else {
+                self.client().delete_sticker("song", song.get_uri(), Stickers::RATING_KEY);
+            }
+            self.notify("rating");
         }
     }
 }

@@ -10,16 +10,12 @@ use gtk::{
 use std::{cell::{Cell, RefCell}, fs::{self, File}, io::Write};
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    common::paintables::FadePaintable,
-    utils::{self, settings_manager},
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, client::{state::StickersSupportLevel, ClientState}, common::{paintables::FadePaintable, Rating}, player::seekbar::Seekbar, utils::{self, settings_manager}
 };
 
 use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
-    use crate::player::seekbar::Seekbar;
-
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -36,6 +32,8 @@ mod imp {
         pub artist: TemplateChild<gtk::Label>,
         #[template_child]
         pub album: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub rating: TemplateChild<Rating>,
 
         // Lyrics box
         #[template_child]
@@ -244,9 +242,9 @@ impl PlayerPane {
         }
     }
 
-    pub fn setup(&self, player: &Player) {
+    pub fn setup(&self, player: &Player, client_state: &ClientState) {
         self.setup_volume_knob(player);
-        self.bind_state(player);
+        self.bind_state(player, client_state);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
@@ -362,7 +360,7 @@ impl PlayerPane {
             .build();
     }
 
-    fn bind_state(&self, player: &Player) {
+    fn bind_state(&self, player: &Player, client_state: &ClientState) {
         let imp = self.imp();
         let info_box = imp.info_box.get();
         player
@@ -409,6 +407,39 @@ impl PlayerPane {
             })
             .sync_create()
             .build();
+
+        let rating = imp.rating.get();
+        player
+            .bind_property("rating", &rating, "value")
+            .sync_create()
+            .build();
+
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &rating,
+                "visible"
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| {
+                Some((lvl >= StickersSupportLevel::SongsOnly).to_value())
+            })
+            .sync_create()
+            .build();
+
+        rating
+            .connect_closure(
+                "changed",
+                false,
+                closure_local!(
+                    #[weak]
+                    player,
+                    move |rating: Rating| {
+                        let rating_val = rating.value();
+                        let rating_opt = if rating_val > 0 { Some(rating_val)} else { None };
+                        player.rate_current_song(rating_opt);
+                    }
+                )
+            );
 
         let lyric_lines = player.lyrics();
         lyric_lines.connect_notify_local(Some("n-items"), clone!(

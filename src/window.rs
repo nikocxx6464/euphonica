@@ -863,7 +863,7 @@ impl EuphonicaWindow {
         win.restore_window_state();
         win.imp()
             .queue_view
-            .setup(app.get_player(), app.get_cache(), win.clone());
+            .setup(&app.get_player(), app.get_cache(), &client_state, win.clone());
         win.imp().recent_view.setup(
             app.get_library(),
             app.get_player(),

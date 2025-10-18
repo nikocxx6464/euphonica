@@ -109,6 +109,7 @@
                                     <property name="label">Unrated</property>
                                     <style>
                                       <class name="dim-label"/>
+                                      <class name="caption"/>
                                     </style>
                                   </object>
                                 </child>

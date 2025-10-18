@@ -14,7 +14,7 @@ use mpd::{
 
 use super::PlayerPane;
 
-use crate::{cache::Cache, common::Song, window::EuphonicaWindow, utils::LazyInit};
+use crate::{cache::Cache, client::ClientState, common::Song, utils::LazyInit, window::EuphonicaWindow};
 
 use super::{Player, QueueRow};
 
@@ -137,6 +137,23 @@ mod imp {
                     this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
                 }
             ));
+
+            let action_clear_rating = gio::ActionEntry::builder("clear-rating")
+                .activate(clone!(
+                    #[strong]
+                    obj,
+                    move |_, _, _| {
+                        if let Some(player) = obj.imp().player.upgrade() {
+                            player.rate_current_song(None);
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = gio::SimpleActionGroup::new();
+            actions.add_action_entries([action_clear_rating]);
+            self.obj().insert_action_group("queue-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
@@ -155,7 +172,7 @@ mod imp {
 glib::wrapper! {
     pub struct QueueView(ObjectSubclass<imp::QueueView>)
         @extends gtk::Widget,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gio::ActionMap, gio::ActionGroup;
 }
 
 impl Default for QueueView {
@@ -182,7 +199,7 @@ impl QueueView {
         Self::default()
     }
 
-    pub fn setup_listview(&self, player: Player, cache: Rc<Cache>) {
+    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
         // Enable/disable clear queue button depending on whether the queue is empty or not
         // Set selection mode
         // TODO: Allow click to jump to song
@@ -271,14 +288,18 @@ impl QueueView {
         self.imp().queue.set_factory(Some(&factory));
 
         // Setup click action
-        self.imp().queue.connect_activate(move |queue, position| {
-            let model = queue.model().expect("The model has to exist.");
-            let song = model
-                .item(position)
-                .and_downcast::<Song>()
-                .expect("The item has to be a `common::Song`.");
-            player.on_song_clicked(song);
-        });
+        self.imp().queue.connect_activate(clone!(
+            #[weak]
+            player,
+            move |queue, position| {
+                let model = queue.model().expect("The model has to exist.");
+                let song = model
+                    .item(position)
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a `common::Song`.");
+                player.on_song_clicked(song);
+            }
+        ));
     }
 
     fn show_save_error_dialog(&self, name: String, player: Player) {
@@ -441,12 +462,12 @@ impl QueueView {
         ));
     }
 
-    pub fn setup(&self, player: Player, cache: Rc<Cache>, window: EuphonicaWindow) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, window: EuphonicaWindow) {
         let _ = self.imp().window.set(window);
-        self.setup_listview(player.clone(), cache);
-        self.imp().player_pane.setup(&player);
-        self.bind_state(&player);
-        self.imp().player.set(Some(&player));
+        self.setup_listview(player, cache);
+        self.imp().player_pane.setup(player, client_state);
+        self.bind_state(player);
+        self.imp().player.set(Some(player));
     }
 }
 

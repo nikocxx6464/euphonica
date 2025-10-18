@@ -11,7 +11,7 @@ use derivative::Derivative;
 use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
-    client::ClientState,
+    client::{state::StickersSupportLevel, ClientState},
     common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
     utils::format_secs_as_duration, window::EuphonicaWindow,
 };
@@ -457,8 +457,20 @@ impl AlbumContentView {
             ),
         );
 
-        self.imp()
-            .rating
+        let rating = self.imp().rating.get();
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &rating,
+                "visible"
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| {
+                Some((lvl == StickersSupportLevel::All).to_value())
+            })
+            .sync_create()
+            .build();
+
+        rating
             .connect_closure( 
                 "changed",
                 false,

@@ -795,6 +795,26 @@ impl MpdWrapper {
         return None;
     }
 
+    pub fn get_known_stickers(&self, typ: &str, uri: &str) -> Option<Stickers> {
+        let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
+        if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
+            match client.stickers(typ, uri) {
+                Ok(kvs) => {
+                    return Some(Stickers::from_mpd_kv(kvs));
+                }
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
+                        self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
+                    }
+                    return None;
+                }
+            }
+        }
+        return None;
+    }
+
     pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str) {
         let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
@@ -1008,12 +1028,23 @@ impl MpdWrapper {
         }
     }
 
-    pub fn get_song_at_queue_id(&self, id: u32) -> Option<Song> {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            match client.songs(mpd::Id(id)) {
+    pub fn get_song_at_queue_id(&self, id: u32, fetch_stickers: bool) -> Option<Song> {
+        let resp: Option<Result<Vec<mpd::Song>, MpdError>>;
+        {
+            resp = self.main_client.borrow_mut().as_mut().map(|client| client.songs(mpd::Id(id)));
+        }
+        if let Some(res) = resp {
+            match res {
                 Ok(mut songs) => {
                     if songs.len() > 0 {
-                        Some(Song::from(std::mem::take(&mut songs[0])))
+                        // Found a song. Now fetch its stickers.
+                        let res = Song::from(std::mem::take(&mut songs[0]));
+                        if fetch_stickers {
+                            if let Some(stickers) = self.get_known_stickers("song", res.get_uri()) {
+                                res.set_stickers(stickers);
+                            }
+                        }
+                        Some(res)
                     } else {
                         None
                     }

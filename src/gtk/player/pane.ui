@@ -327,6 +327,13 @@
                   </object>
                 </child>
                 <child>
+                  <object class="EuphonicaRating" id="rating">
+                    <property name="halign">center</property>
+                    <property name="dim-inactive">true</property>
+                    <property name="editable">true</property>
+                  </object>
+                </child>
+                <child>
                   <object class="GtkScrolledWindow" id="lyrics_window">
                     <style>
                       <class name="lyrics-box"/>
