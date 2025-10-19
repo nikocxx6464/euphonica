@@ -8,6 +8,8 @@ use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use std::sync::OnceLock;
 use std::fmt::Write;
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
 use std::{io::Cursor, sync::RwLock};
 use tokio::runtime::Runtime;
 
@@ -203,6 +205,10 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
             .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
             .into_rgb8(),
     )
+}
+
+pub fn current_unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is

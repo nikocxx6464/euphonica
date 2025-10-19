@@ -61,3 +61,10 @@ pub enum BackgroundTask {
     // DynamicPlaylist object, optional fetch limit for preview, queue or not, play or not
     FetchDynamicPlaylist(DynamicPlaylist, Option<usize>, bool, bool)
 }
+
+#[derive(Debug, Clone, Copy)]
+pub enum StickerSetMode {
+    Inc,
+    Set,
+    Dec
+}

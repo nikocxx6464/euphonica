@@ -1,9 +1,5 @@
 use crate::{
-    cache::{sqlite, Cache},
-    client::{BackgroundTask, ClientState, MpdWrapper},
-    common::{Album, Artist, INode, Song, Stickers}, 
-    utils::settings_manager,
-    player::Player,
+    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, INode, Song, Stickers}, player::Player, utils::settings_manager
 };
 use glib::{closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
@@ -346,7 +342,7 @@ impl Library {
 
     pub fn rate_album(&self, album: &Album, score: Option<i8>) {
         if let Some(score) = score {
-            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string());
+            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string(), StickerSetMode::Set);
         }
         else {
             self.client().delete_sticker("album", album.get_title(), Stickers::RATING_KEY);

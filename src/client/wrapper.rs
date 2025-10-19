@@ -32,7 +32,7 @@ use crate::{
     utils,
 };
 
-use super::{AsyncClientMessage, BackgroundTask};
+use super::{AsyncClientMessage, BackgroundTask, StickerSetMode};
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::password::get_mpd_password;
@@ -815,10 +815,15 @@ impl MpdWrapper {
         return None;
     }
 
-    pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str) {
+    pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str, mode: StickerSetMode) {
         let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
-            match client.set_sticker(typ, uri, name, value) {
+            let cmd = match mode {
+                StickerSetMode::Inc => client.inc_sticker(typ, uri, name, value),
+                StickerSetMode::Set => client.set_sticker(typ, uri, name, value),
+                StickerSetMode::Dec => client.dec_sticker(typ, uri, name, value),
+            };
+            match cmd {
                 Ok(()) => {self.force_idle();},
                 Err(error) => {
                     if let MpdError::Server(server_err) = error {
