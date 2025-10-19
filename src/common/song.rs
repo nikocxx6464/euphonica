@@ -94,18 +94,18 @@ pub struct SongInfo {
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
     #[derivative(Default(value = "Cell::new(-1)"))]
-    track: Cell<i64>,
+    pub track: Cell<i64>,
     #[derivative(Default(value = "Cell::new(-1)"))]
-    disc: Cell<i64>,
+    pub disc: Cell<i64>,
     // TODO: add albumsort
     // Store Date instead of string to save a tiny bit of memory.
     // Also gives us formatting flexibility in the future.
-    release_date: Option<Date>,
+    pub release_date: Option<Date>,
     // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
     quality_grade: QualityGrade,
     // MusicBrainz stuff
     mbid: Option<String>,
-    last_modified: Option<String>,
+    pub last_modified: Option<String>,
     pub last_played: Option<OffsetDateTime>
 }
 

@@ -5,10 +5,11 @@ pub mod wrapper;
 pub mod password;
 
 use mpd::{lsinfo::LsInfoEntry, Query, Subsystem, error::Error as MpdError};
+use state::StickersSupportLevel;
 pub use state::{ClientState, ConnectionState, ClientError};
 pub use wrapper::MpdWrapper;
 
-use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo};
+use crate::common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo, Stickers};
 
 // Messages to be sent from child thread or synchronous methods
 enum AsyncClientMessage {
@@ -58,8 +59,8 @@ pub enum BackgroundTask {
     FetchArtistAlbums(String), // Get all albums of an artist with given name
     FetchPlaylistSongs(String), // Get songs of playlist with given name
     FetchRecentSongs(u32), // Get last n songs
-    // DynamicPlaylist object, optional fetch limit for preview, queue or not, play or not
-    FetchDynamicPlaylist(DynamicPlaylist, Option<usize>, bool, bool)
+    // DynamicPlaylist object, queue or not, play or not
+    FetchDynamicPlaylist(DynamicPlaylist, bool, bool)
 }
 
 #[derive(Debug, Clone, Copy)]

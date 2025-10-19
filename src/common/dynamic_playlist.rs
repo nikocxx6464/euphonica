@@ -9,13 +9,21 @@ use strum_macros::{EnumCount as EnumCountMacro, EnumIter, VariantArray};
 
 #[derive(Serialize, Deserialize, Debug, Copy, Clone, EnumIter, EnumCountMacro, VariantArray, PartialEq, Eq)]
 pub enum Ordering {
-    AlbumTrack,
+    AscAlbumTitle,
+    DescAlbumTitle,
+    Track,
+    AscArtistTag,
+    DescArtistTag,
     AscReleaseDate,
     DescReleaseDate,
     AscRating,
     DescRating,
-    FirstModified,
-    LastModified,
+    AscLastModified,
+    DescLastModified,
+    AscPlayCount,
+    DescPlayCount,
+    AscSkipCount,
+    DescSkipCount,
     Random
 }
 
@@ -25,13 +33,21 @@ impl Ordering {
         // Enforce type to remind myself to add a name here for every new enum type
         static MODEL: Lazy<[&str; Ordering::COUNT]> = Lazy::new(|| {
             [
-                "Album & track number",
-                "Asc. Release date",
-                "Desc. Release date",
+                "Asc. album title",
+                "Desc. album title",
+                "Track number",
+                "Asc. artist tag",
+                "Desc. artist tag",
+                "Asc. release date",
+                "Desc. release date",
                 "Asc. rating",
                 "Desc. rating",
-                "First modified",
-                "Last modified",
+                "Asc. last modified",
+                "Desc. last modified",
+                "Asc. play count",
+                "Desc. play count",
+                "Asc. skip count",
+                "Desc. skip count",
                 "Random"  // Keep this the last option please
             ]
         });
@@ -41,6 +57,29 @@ impl Ordering {
 
     pub fn readable_name(&self) -> &'static str {
         Self::model()[*self as usize]
+    }
+
+    /// Some orderings have an inverse version. Figuring this out is useful
+    /// for input sanitising (i.e. preventing both asc. rating and desc. rating
+    /// from being specified together).
+    pub fn reverse(&self) -> Option<Self> {
+        match self {
+            Self::AscAlbumTitle => Some(Self::DescAlbumTitle),
+            Self::DescAlbumTitle => Some(Self::AscAlbumTitle),
+            Self::AscReleaseDate => Some(Self::DescReleaseDate),
+            Self::DescReleaseDate => Some(Self::AscReleaseDate),
+            Self::AscArtistTag => Some(Self::DescArtistTag),
+            Self::DescArtistTag => Some(Self::AscArtistTag),
+            Self::AscRating => Some(Self::DescRating),
+            Self::DescRating => Some(Self::AscRating),
+            Self::AscLastModified => Some(Self::DescLastModified),
+            Self::DescLastModified => Some(Self::AscLastModified),
+            Self::AscPlayCount => Some(Self::DescPlayCount),
+            Self::DescPlayCount => Some(Self::AscPlayCount),
+            Self::AscSkipCount => Some(Self::DescSkipCount),
+            Self::DescSkipCount => Some(Self::AscSkipCount),
+            _ => None
+        }
     }
 }
 
@@ -89,7 +128,7 @@ impl AutoRefresh {
 }
 
 
-#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+#[derive(Default, Serialize, Deserialize, Debug, Clone, Copy)]
 pub enum StickerObjectType {
     #[default]
     #[serde(rename = "song")]

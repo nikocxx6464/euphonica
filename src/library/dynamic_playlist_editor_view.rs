@@ -146,7 +146,6 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
-
             self.title.connect_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -159,6 +158,7 @@ mod imp {
             let _ = self.rules_model.set(
                 self.rules_box.observe_children()
             );
+            self.obj().validate_rules();
 
             self.add_rule_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
@@ -512,7 +512,8 @@ impl DynamicPlaylistEditorView {
         let n_items = model.n_items();
         // There's always the "add rule" button
         if n_items == 1 {
-            let old_rules_valid = self.imp().rules_valid.replace(false);
+            // Allow fetching without any filters. Basically just sort the whole library.
+            let old_rules_valid = self.imp().rules_valid.replace(true);
             if old_rules_valid {
                 self.update_sensitivity();
             }
@@ -553,6 +554,11 @@ impl DynamicPlaylistEditorView {
             if let Some(ordering_btn) = orderings.item(i as u32).and_downcast::<OrderingButton>() {
                 let ordering = ordering_btn.ordering();
                 presence[ordering as usize] = true;
+                // Some orderings cannot go together, so if one is presence, the other should
+                // also be considered to be.
+                if let Some(reversed) = ordering.reverse() {
+                    presence[reversed as usize] = true;
+                }
                 if ordering == Ordering::Random {
                     has_random = true;
                 } else {

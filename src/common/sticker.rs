@@ -23,7 +23,7 @@ impl TryFrom<i8> for Thumbs {
 
 // Our sticker schema
 // Largely follows myMPD's schema
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Stickers {
     pub rating: Option<i8>,
     pub like: Thumbs, // 0 = dislike, 1 = neutral, 2 = like
