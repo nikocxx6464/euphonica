@@ -88,6 +88,36 @@ impl AutoRefresh {
     }
 }
 
+
+#[derive(Default, Serialize, Deserialize, Debug, Clone)]
+pub enum StickerObjectType {
+    #[default]
+    #[serde(rename = "song")]
+    Song,
+    #[serde(rename = "playlist")]
+    Playlist,
+    // Tags
+    #[serde(rename = "album")]
+    Album,
+    #[serde(rename = "artist")]
+    Artist,
+    #[serde(rename = "albumartist")]
+    AlbumArtist
+}
+
+impl StickerObjectType {
+    pub fn to_str(&self) -> &'static str {
+        match self {
+            Self::Song => "song",
+            Self::Playlist => "playlist",
+            Self::Album => "album",
+            Self::Artist => "artist",
+            Self::AlbumArtist => "albumartist"
+        }
+    }
+}
+
+
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StickerOperation {
     LessThan,
@@ -159,8 +189,8 @@ impl<'a, 'b: 'a> QueryLhs {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub enum Rule {
-    /// LHS (key), operator, RHS (always a string)
-    Sticker(String, StickerOperation, String),
+    /// Entity type (song, album, etc), LHS (key), operator, RHS (always a string)
+    Sticker(StickerObjectType, String, StickerOperation, String),
     /// A subset of supported query operations.
     /// Optional LHS (tag or MPD term as string), MPD operation, right hand
     /// side (unary ops use this). We don't use mpd::search::Filter directly

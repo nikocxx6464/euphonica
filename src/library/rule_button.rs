@@ -5,7 +5,7 @@ use mpd::search::Operation as TagOperation;
 use once_cell::sync::Lazy;
 use std::cell::{OnceCell, RefCell};
 
-use crate::common::{dynamic_playlist::{QueryLhs, Rule, StickerOperation}, INode, Stickers};
+use crate::common::{dynamic_playlist::{QueryLhs, Rule, StickerObjectType, StickerOperation}, INode, Stickers};
 
 use super::Library;
 
@@ -162,9 +162,14 @@ mod imp {
         pub fn rule_type_model() -> &'static [&'static str] {
             static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
                 vec![
+                    "Rating",
                     "Album rating",
                     "URI",
                     "Modified within last",
+                    "Played within last",
+                    "Play count",
+                    "Skipped within last",
+                    "Skip count",
                     "Any tag",
                     "Tag: Album",
                     "Tag: Artist",
@@ -225,7 +230,7 @@ mod imp {
             MODEL.as_ref()
         }
 
-        pub fn last_modified_operator_model() -> &'static [&'static str] {
+        pub fn recency_operator_model() -> &'static [&'static str] {
             static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
                 vec![
                     "days",
@@ -242,7 +247,7 @@ mod imp {
             let rhs = self.rhs.get();
             // Matching by string is more manageable in terms of future extensibility
             match self.obj().get_rule_type() {
-                "Album rating" => {
+                "Rating" | "Album rating" | "Play count" | "Skip count" => {
                     op_model = Some(
                         gtk::StringList::new(
                             Self::numeric_sticker_operator_model()
@@ -264,10 +269,10 @@ mod imp {
                     rhs.set_max_width_chars(16);
                     rhs.set_max_length(0);
                 },
-                "Modified within last" => {
+                "Modified within last" | "Played within last" | "Skipped within last" => {
                     op_model = Some(
                         gtk::StringList::new(
-                            Self::last_modified_operator_model()
+                            Self::recency_operator_model()
                         )
                     );
                     lhs.set_visible(true);
@@ -298,9 +303,10 @@ mod imp {
 
         pub fn validate(&self) {
             let is_valid = match self.obj().get_rule_type() {
-                "Album rating" => self.rhs_is_numeric((0.0 as f64)..=(5.0 as f64)),
+                "Rating" | "Album rating" => self.rhs_is_numeric((0.0 as f64)..=(5.0 as f64)),
+                "Play count" | "Skip count" => self.rhs_is_numeric((0.0 as u64)..),
                 "URI" => self.rhs_is_nonempty(),
-                "Modified within last" => self.lhs_is_numeric((0 as i64)..(3153600000 as i64)),  // Victorians didn't run Unix
+                "Modified within last" | "Played within last" | "Skipped within last" => self.lhs_is_numeric((0 as i64)..(3153600000 as i64)),  // Victorians didn't run Unix
                 "Any tag" | "Tag: Album" | "Tag: Artist"
                     | "Tag: AlbumArtist" => self.rhs_is_nonempty(),
                 _ => unimplemented!()
@@ -385,12 +391,19 @@ impl RuleButton {
             None
         } else {
             match self.get_rule_type() {
+                "Rating" => {
+                    let internal_val = format!(
+                        "{:.0}",
+                        (self.imp().rhs.text().parse::<f64>().unwrap() * 2.0).round() as u8
+                    );
+                    Some(self.get_numeric_sticker_rule(StickerObjectType::Song, Stickers::RATING_KEY, internal_val))
+                }
                 "Album rating" => {
                     let internal_val = format!(
                         "{:.0}",
                         (self.imp().rhs.text().parse::<f64>().unwrap() * 2.0).round() as u8
                     );
-                    Some(self.get_numeric_sticker_rule(Stickers::RATING_KEY, internal_val))
+                    Some(self.get_numeric_sticker_rule(StickerObjectType::Album, Stickers::RATING_KEY, internal_val))
                 }
                 "URI" => {
                     let lhs: QueryLhs = match imp
@@ -406,7 +419,7 @@ impl RuleButton {
                 "Modified within last" => {
                     let mul: i64 = match imp
                         ::RuleButton
-                        ::last_modified_operator_model()[self.imp().op.selected() as usize]
+                        ::recency_operator_model()[self.imp().op.selected() as usize]
                     {
                         "days" => 86400,
                         "weeks" => 604800,
@@ -414,7 +427,55 @@ impl RuleButton {
                     };
                     let secs = mul * self.imp().lhs.text().parse::<i64>().unwrap();
                     Some(Rule::LastModified(secs))
-                },
+                }
+                "Played within last" => {
+                    let mul: i64 = match imp
+                        ::RuleButton
+                        ::recency_operator_model()[self.imp().op.selected() as usize]
+                    {
+                        "days" => 86400,
+                        "weeks" => 604800,
+                        _ => unimplemented!()
+                    };
+                    let secs = mul * self.imp().lhs.text().parse::<i64>().unwrap();
+                    Some(Rule::Sticker(
+                        StickerObjectType::Song,
+                        Stickers::LAST_PLAYED_KEY.to_string(),
+                        StickerOperation::IntGreaterThan,
+                        secs.to_string()
+                    ))
+                }
+                "Skipped within last" => {
+                    let mul: i64 = match imp
+                        ::RuleButton
+                        ::recency_operator_model()[self.imp().op.selected() as usize]
+                    {
+                        "days" => 86400,
+                        "weeks" => 604800,
+                        _ => unimplemented!()
+                    };
+                    let secs = mul * self.imp().lhs.text().parse::<i64>().unwrap();
+                    Some(Rule::Sticker(
+                        StickerObjectType::Song,
+                        Stickers::LAST_SKIPPED_KEY.to_string(),
+                        StickerOperation::IntGreaterThan,
+                        secs.to_string()
+                    ))
+                }
+                "Play count" => {
+                    let internal_val = format!(
+                        "{:.0}",
+                        (self.imp().rhs.text().parse::<f64>().unwrap()).round() as u64
+                    );
+                    Some(self.get_numeric_sticker_rule(StickerObjectType::Song, Stickers::PLAY_COUNT_KEY, internal_val))
+                }
+                "Skip count" => {
+                    let internal_val = format!(
+                        "{:.0}",
+                        (self.imp().rhs.text().parse::<f64>().unwrap()).round() as u64
+                    );
+                    Some(self.get_numeric_sticker_rule(StickerObjectType::Song, Stickers::SKIP_COUNT_KEY, internal_val))
+                }
                 "Any tag" => {
                     let op = self.get_tag_op();
                     Some(Rule::Query(QueryLhs::Any(op), self.imp().rhs.text().to_string()))
@@ -453,7 +514,7 @@ impl RuleButton {
         }
     }
 
-    fn get_numeric_sticker_rule(&self, key: &str, val: String) -> Rule {
+    fn get_numeric_sticker_rule(&self, obj_type: StickerObjectType, key: &str, val: String) -> Rule {
 
         let op: StickerOperation = match imp
             ::RuleButton
@@ -464,6 +525,6 @@ impl RuleButton {
             "<" => StickerOperation::IntLessThan,
             _ => unimplemented!()
         };
-        Rule::Sticker(String::from(key), op, val)
+        Rule::Sticker(obj_type, String::from(key), op, val)
     }
 }

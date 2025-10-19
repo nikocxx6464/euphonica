@@ -15,7 +15,7 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
-use crate::{cache::{get_new_image_paths, sqlite}, common::{dynamic_playlist::{QueryLhs, Rule, StickerOperation}, SongInfo}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
+use crate::{cache::{get_new_image_paths, sqlite}, common::{dynamic_playlist::{QueryLhs, Rule, StickerObjectType, StickerOperation}, SongInfo}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
 
 use super::*;
 
@@ -456,9 +456,11 @@ fn fetch_songs_by_query<F>(
 
 fn fetch_uris_by_sticker<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
+    obj: StickerObjectType,
     sticker: &str,
     op: StickerOperation,
     rhs: &str,
+    only_in: Option<&str>,
     mut respond: F,
 ) where
     F: FnMut(Vec<String>) -> Result<(), SendError<AsyncClientMessage>>,
@@ -467,7 +469,7 @@ fn fetch_uris_by_sticker<F>(
     let mut more: bool = true;
     while more && (curr_len) < FETCH_LIMIT {
         match client.find_sticker_op(
-            "song", "", sticker, op.to_mpd_syntax(), rhs,
+            obj.to_str(), only_in.unwrap_or(""), sticker, op.to_mpd_syntax(), rhs,
             Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32))
         ) {
             Ok(uris) => {
@@ -949,11 +951,11 @@ fn resolve_dynamic_playlist_rules(
     // Resolve into concrete URIs.
     // First, separate the search query-based conditions from the sticker ones.
     let mut query_clauses: Vec<(QueryLhs, String)> = Vec::new();
-    let mut sticker_clauses: Vec<(String, StickerOperation, String)> = Vec::new();
+    let mut sticker_clauses: Vec<(StickerObjectType, String, StickerOperation, String)> = Vec::new();
     for rule in dp.rules.into_iter() {
         match rule {
-            Rule::Sticker(key, op, rhs) => {
-                sticker_clauses.push((key, op, rhs));
+            Rule::Sticker(obj, key, op, rhs) => {
+                sticker_clauses.push((obj, key, op, rhs));
             }
             Rule::Query(lhs, rhs) => {
                 query_clauses.push((lhs, rhs));
@@ -965,7 +967,6 @@ fn resolve_dynamic_playlist_rules(
         }
     }
     let mut res: Option<FxHashSet<String>> = None;
-    // Query first 'cuz I feel like it.
     if !query_clauses.is_empty() {
         let mut mpd_query = Query::new();
         for (lhs, rhs) in query_clauses.into_iter() {
@@ -982,10 +983,11 @@ fn resolve_dynamic_playlist_rules(
     }
 
     // Get matching URIs for each sticker condition
+    // TODO: Optimise sticker operations by limiting to any found URI query clause.
     for clause in sticker_clauses.into_iter() {
         let mut set = FxHashSet::default();
         fetch_uris_by_sticker(
-            client, &clause.0, clause.1, &clause.2,
+            client, clause.0, &clause.1, clause.2, &clause.3, None,
             |batch| {
                 for uri in batch.into_iter() {
                     set.insert(uri);
