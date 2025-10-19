@@ -344,7 +344,7 @@
                     <property name="propagate-natural-height">false</property>
                     <property name="has-frame">false</property>
                     <property name="hexpand">true</property>
-                    <property name="height-request">32</property>
+                    <property name="height-request">48</property>
                     <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListBox" id="lyrics_box">

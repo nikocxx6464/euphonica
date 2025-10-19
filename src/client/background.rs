@@ -1,6 +1,5 @@
 use std::{
-    borrow::Cow, hash::BuildHasherDefault, num::NonZero, ops::Range, sync::Mutex,
-    cmp::Ordering as StdOrdering
+    borrow::Cow, cmp::Ordering as StdOrdering, hash::BuildHasherDefault, i64, num::NonZero, ops::Range, sync::Mutex
 };
 use chrono::{DateTime, Duration, Local};
 
@@ -452,6 +451,7 @@ fn fetch_songs_by_query<F>(
             }
             Err(e) => {
                 dbg!(e);
+                more = false;
             }
         }
     }
@@ -513,13 +513,14 @@ fn fetch_uris_by_sticker<F>(
                             }
                         }
                     }
-
+                    curr_len += BATCH_SIZE;
                 } else {
                     more = false;
                 }
             }
             Err(e) => {
                 dbg!(e);
+                more = false;
             }
         }
     }
@@ -1008,13 +1009,14 @@ fn get_past_unix_timestamp(backoff: i64) -> i64 {
 
 fn resolve_dynamic_playlist_rules(
     client: &mut mpd::Client<stream::StreamWrapper>,
-    mut rules: Vec<Rule>
+    rules: Vec<Rule>
 ) ->Vec<String> {
     // Resolve into concrete URIs.
     // First, separate the search query-based conditions from the sticker ones.
     let mut query_clauses: Vec<(QueryLhs, String)> = Vec::new();
     let mut sticker_clauses: Vec<(StickerObjectType, String, StickerOperation, String)> = Vec::new();
     for rule in rules.into_iter() {
+        println!("{:?}", rule);
         match rule {
             Rule::Sticker(obj, key, op, rhs) => {
                 sticker_clauses.push((obj, key, op, rhs));
@@ -1028,21 +1030,23 @@ fn resolve_dynamic_playlist_rules(
             }
         }
     }
-    let mut res: Option<FxHashSet<String>> = None;
+    let mut res: FxHashSet<String> = FxHashSet::default();
+    let mut mpd_query = Query::new();
     if !query_clauses.is_empty() {
-        let mut mpd_query = Query::new();
         for (lhs, rhs) in query_clauses.into_iter() {
             lhs.add_to_query(&mut mpd_query, rhs);
         }
-        let mut set = FxHashSet::default();
-        fetch_songs_by_query(client, &mpd_query, |batch| {
-            for song in batch.into_iter() {
-                set.insert(song.uri);
-            }
-            Ok(())
-        });
-        res = Some(set);
+    } else {
+        // Dummy term that basically matches everything.
+        mpd_query.and(Term::AddedSince, i64::MIN.to_string());
     }
+    fetch_songs_by_query(client, &mpd_query, |batch| {
+        for song in batch.into_iter() {
+            res.insert(song.uri);
+        }
+        Ok(())
+    });
+    println!("Length after query_clauses: {}", res.len());
 
     // Get matching URIs for each sticker condition
     // TODO: Optimise sticker operations by limiting to any found URI query clause.
@@ -1057,22 +1061,16 @@ fn resolve_dynamic_playlist_rules(
                 Ok(())
             }
         );
-        if let Some(ref prev_res) = res {
-            // TODO: reduce cloning
-            let intersection: FxHashSet<String> = prev_res.intersection(&set).map(|s| s.to_owned()).collect();
-            if intersection.len() == 0 {
-                // Return early
-                return Vec::with_capacity(0);
-            }
-            res.replace(intersection);
+        println!("Length of matches of sticker_clause: {}", set.len());
+        res.retain(move |elem| {set.contains(elem)});
+        if res.is_empty() {
+            // Return early
+            return Vec::with_capacity(0);
         }
+        println!("Length afterwards: {}", res.len());
     }
 
-    if let Some(res) = res {
-        res.into_iter().collect()
-    } else {
-        Vec::with_capacity(0)
-    }
+    res.into_iter().collect()
 }
 
 fn cmp_options_nulls_last<T: Ord>(
@@ -1266,36 +1264,45 @@ pub fn fetch_dynamic_playlist(
             &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
             true
         ).map(|raw| raw.into_iter().map(|t| (t.0, t.1.unwrap())).collect::<Vec<(SongInfo, Stickers)>>()) {
-            // Sort the song list now
-            let cmp_func = build_comparator(&dp.ordering);
-            songs_stickers.sort_by(cmp_func);
-            if let Some(limit) = dp.limit {
-                songs_stickers.truncate(limit as usize);
-            }
-            let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+            if !songs_stickers.is_empty() {
+                // Sort the song list now
+                let cmp_func = build_comparator(&dp.ordering);
+                songs_stickers.sort_by(cmp_func);
+                if let Some(limit) = dp.limit {
+                    songs_stickers.truncate(limit as usize);
+                }
+                let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
 
-            if queue {
-                add_multi(
-                    client,
-                    sender_to_fg,
-                    &songs.into_iter().map(|s| s.uri).collect::<Vec<String>>(),
-                    false,
-                    if play {Some(0)} else {None}, None
-                );
-            } else {
-                let mut curr_len: usize = 0;
-                let songs_len = songs.len();
-                while curr_len < songs_len {
-                    let next_len = (curr_len + BATCH_SIZE).min(songs_len);
-                    let _ = sender_to_fg.send_blocking(
-                        AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
+                if queue {
+                    add_multi(
+                        client,
+                        sender_to_fg,
+                        &songs.into_iter().map(|s| s.uri).collect::<Vec<String>>(),
+                        false,
+                        if play {Some(0)} else {None}, None
                     );
-                    curr_len = next_len;
+                } else {
+                    let mut curr_len: usize = 0;
+                    let songs_len = songs.len();
+                    while curr_len < songs_len {
+                        let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                        let _ = sender_to_fg.send_blocking(
+                            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
+                        );
+                        curr_len = next_len;
+                    }
                 }
             }
+            // Send once more w/ an empty list to signal end-of-result
+            println!("Sending end-of-response");
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), Vec::new())
+            );
         }
         client.tagtypes_all().expect("Cannot restore tagtypes");
     }
 
-
+    if queue {
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+    }
 }

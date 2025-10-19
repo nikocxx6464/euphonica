@@ -156,7 +156,7 @@ impl PlaylistView {
         library: Library,
         cache: Rc<Cache>,
         client_state: ClientState,
-        window: EuphonicaWindow,
+        window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
         content_view.setup(library.clone(), client_state.clone(), cache.clone(), window);

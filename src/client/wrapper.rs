@@ -306,7 +306,7 @@ impl MpdWrapper {
                         BackgroundTask::QueuePlaylist(name, play_from) => {
                             background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
                         }
-                        BackgroundTask::FetchDynamicPlaylist(dp, queue, play) => {
+                        BackgroundTask::FetchDynamicPlaylistSongs(dp, queue, play) => {
                             background::fetch_dynamic_playlist(&mut client, &sender_to_fg, dp, queue, play);
                         }
                     }
@@ -1207,24 +1207,22 @@ impl MpdWrapper {
     }
 
     fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
-        if !songs.is_empty() {
-            if let Some(tag) = tag {
-                self.state.emit_by_name::<()>(
-                    signal_name,
-                    &[
-                        &tag,
-                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                    ]
-                );
-            }
-            else {
-                self.state.emit_by_name::<()>(
-                    signal_name,
-                    &[
-                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                    ]
-                );
-            }
+        if let Some(tag) = tag {
+            self.state.emit_by_name::<()>(
+                signal_name,
+                &[
+                    &tag,
+                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                ]
+            );
+        }
+        else {
+            self.state.emit_by_name::<()>(
+                signal_name,
+                &[
+                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                ]
+            );
         }
     }
 

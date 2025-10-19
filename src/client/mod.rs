@@ -60,7 +60,7 @@ pub enum BackgroundTask {
     FetchPlaylistSongs(String), // Get songs of playlist with given name
     FetchRecentSongs(u32), // Get last n songs
     // DynamicPlaylist object, queue or not, play or not
-    FetchDynamicPlaylist(DynamicPlaylist, bool, bool)
+    FetchDynamicPlaylistSongs(DynamicPlaylist, bool, bool)
 }
 
 #[derive(Debug, Clone, Copy)]

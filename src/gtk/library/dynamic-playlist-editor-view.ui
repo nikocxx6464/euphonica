@@ -364,7 +364,6 @@
                               <object class="AdwStatusPage">
                                 <property name="title" translatable="true">No Matches</property>
                                 <property name="description" translatable="true">Try relaxing your rules.</property>
-                                <property name="icon-name">recent-symbolic</property>
                               </object>
                             </property>
                           </object>

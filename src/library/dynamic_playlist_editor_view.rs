@@ -1,6 +1,7 @@
 use adw::subclass::prelude::*;
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
 use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use uuid::Uuid;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -113,7 +114,8 @@ mod imp {
 
         pub library: OnceCell<Library>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub dp: RefCell<Option<DynamicPlaylist>>,
+        #[derivative(Default(value = "RefCell::new(String::from(\"\"))"))]
+        pub tmp_name: RefCell<String>,
         pub window: OnceCell<EuphonicaWindow>,
         pub filepath_sender: OnceCell<Sender<String>>,
     }
@@ -259,7 +261,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    dbg!(this.obj().build_dynamic_playlist());
+                    this.obj().preview_result();
                 }
             ));
 
@@ -322,7 +324,7 @@ impl DynamicPlaylistEditorView {
     //     }
     // }
 
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
+    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState, window: &EuphonicaWindow) {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
@@ -333,6 +335,7 @@ impl DynamicPlaylistEditorView {
            .set(window.clone())
            .expect("DynamicPlaylistEditorView cannot bind to window");
         self.imp().library.set(library).expect("Could not register DynamicPlaylistEditorView with library controller");
+
         // cache_state.connect_closure(
         //     "album-art-downloaded",
         //     false,
@@ -390,11 +393,8 @@ impl DynamicPlaylistEditorView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, name: String, songs: glib::BoxedAnyObject| {
-                    // TODO: disambiguate between this tentative playlist and existing ones by suffixing with "[EDITING]"
-                    if let Some(dp) = this.imp().dp.borrow().as_ref() {
-                        if dp.name == name {
-                            this.add_songs(songs.borrow::<Vec<Song>>().as_ref());
-                        }
+                    if name == this.imp().tmp_name.borrow().as_str() {
+                        this.add_songs(songs.borrow::<Vec<Song>>().as_ref());
                     }
                 }
             ),
@@ -441,20 +441,17 @@ impl DynamicPlaylistEditorView {
         // Tell factory how to bind `AlbumSongRow` to one of our Album GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
-            let item: Song = list_item
+            let item = list_item
                 .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem")
-                .item()
-                .and_downcast::<Song>()
-                .expect("The item has to be a common::Song.");
+                .expect("Needs to be ListItem");
 
             // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: AlbumSongRow = list_item
+            let child: DynamicPlaylistSongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<AlbumSongRow>()
-                .expect("The child has to be an `AlbumSongRow`.");
+                .and_downcast::<DynamicPlaylistSongRow>()
+                .expect("The child has to be an `DynamicPlaylistSongRow`.");
 
             // Within this binding fn is where the cached album art texture gets used.
             child.bind(&item);
@@ -462,19 +459,21 @@ impl DynamicPlaylistEditorView {
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
-            // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: AlbumSongRow = list_item
+            // Get `DynamicPlaylistSongRow` from `ListItem` (the UI widget)
+            let child: DynamicPlaylistSongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<AlbumSongRow>()
-                .expect("The child has to be an `AlbumSongRow`.");
+                .and_downcast::<DynamicPlaylistSongRow>()
+                .expect("The child has to be an `DynamicPlaylistSongRow`.");
             child.unbind();
         });
 
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
-
+        self.imp().content.set_model(Some(
+            &gtk::NoSelection::new(Some(self.imp().song_list.clone()))
+        ));
         // Setup click action
         // self.imp().content.connect_activate(clone!(
         //     #[strong(rename_to = this)]
@@ -643,6 +642,23 @@ impl DynamicPlaylistEditorView {
         }
     }
 
+    fn preview_result(&self) {
+        self.imp().refresh_btn.set_sensitive(false);
+        self.imp().content_pages.set_visible_child_name("spinner");
+        self.imp().song_list.remove_all();
+
+        // Build a test DP instance with a random name to avoid confusion w/ late-coming
+        // background fetches of actual DPs.
+        let mut dp = self.build_dynamic_playlist();
+        let tmp_name = Uuid::new_v4().simple().to_string();
+        dp.name = tmp_name.clone();
+        self.imp().tmp_name.replace(tmp_name);
+
+        println!("{:?}", &dp);
+
+        self.imp().library.get().unwrap().fetch_dynamic_playlist(dp, false, false);
+    }
+
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {
         let rules_model = self.imp().rules_model.get().unwrap();
         let n_rules = rules_model.n_items() as usize;
@@ -792,11 +808,19 @@ impl DynamicPlaylistEditorView {
     }
 
     fn add_songs(&self, songs: &[Song]) {
-        // let content_spinner = self.imp().content_spinner.get();
-        // if content_spinner.visible_child_name().unwrap() != "content" {
-        //     content_spinner.set_visible_child_name("content");
-        // }
-        // self.imp().song_list.extend_from_slice(songs);
+        // If this is called with an empty list, it indicates the queried DP is empty.
+        if songs.is_empty() {
+            println!("dynamic_playlist_editor_view: end of response received");
+            if self.imp().content_pages.visible_child_name().is_some_and(|name| name.as_str() != "empty")
+                && self.imp().song_list.n_items() == 0
+            {
+                self.imp().content_pages.set_visible_child_name("empty");
+            }
+            self.imp().refresh_btn.set_sensitive(true);
+        } else {
+            self.imp().content_pages.set_visible_child_name("content");
+            self.imp().song_list.extend_from_slice(songs);
+        }
         // self.imp()
         //     .track_count
         //     .set_label(&self.imp().song_list.n_items().to_string());

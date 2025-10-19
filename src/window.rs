@@ -885,11 +885,17 @@ impl EuphonicaWindow {
             app.get_library(),
             app.get_cache()
         );
+        win.imp().dyn_playlist_view.setup(
+            app.get_library(),
+            app.get_cache(),
+            app.get_client().get_client_state(),
+            &win,
+        );
         win.imp().playlist_view.setup(
             app.get_library(),
             app.get_cache(),
             app.get_client().get_client_state(),
-            win.clone(),
+            &win,
         );
         win.imp().sidebar.setup(&win, &app);
         win.imp().player_bar.setup(&app.get_player());

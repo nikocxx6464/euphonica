@@ -483,7 +483,7 @@ impl PlaylistContentView {
         library: Library,
         client_state: ClientState,
         cache: Rc<Cache>,
-        window: EuphonicaWindow,
+        window: &EuphonicaWindow,
     ) {
         // Set up channel for listening to cover dialog
         let (sender, receiver) = async_channel::unbounded::<String>();
@@ -539,7 +539,7 @@ impl PlaylistContentView {
         );
         self.imp()
             .window
-            .set(window)
+            .set(window.clone())
             .expect("PlaylistContentView: Cannot set reference to window");
         self.imp()
             .library

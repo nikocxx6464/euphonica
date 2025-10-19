@@ -1,5 +1,5 @@
 use crate::{
-    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, INode, Song, Stickers}, player::Player, utils::settings_manager
+    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers}, player::Player, utils::settings_manager
 };
 use glib::{closure_local, subclass::Signal};
 use gtk::{gio, glib, prelude::*};
@@ -568,6 +568,13 @@ impl Library {
             ));
         });
         self.client().edit_playlist(&edits)
+    }
+
+    /// Retrieve songs in a dynamic playlist
+    pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, queue: bool, play: bool) {
+        self.client().queue_background(
+            BackgroundTask::FetchDynamicPlaylistSongs(dp, queue, play), true
+        );
     }
 
     pub fn get_folder_contents(&self) {
