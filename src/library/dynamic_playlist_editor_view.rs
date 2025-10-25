@@ -1,50 +1,39 @@
+use adw::prelude::*;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use ashpd::desktop::file_chooser::SelectedFiles;
+use glib::{clone, closure_local};
+use gtk::{gio, glib, gdk, CompositeTemplate, ListItem, SignalListItemFactory};
 use uuid::Uuid;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-use time::{format_description, Date};
+
 use derivative::Derivative;
 use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
-use super::{artist_tag::ArtistTag, ordering_button::OrderingButton, rule_button::RuleButton, AlbumSongRow, Library};
 use crate::{
     cache::{
-        placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING},
-        Cache, CacheState
+        placeholders::{ALBUMART_PLACEHOLDER}, sqlite, Cache, CacheState, ImageAction
     },
     client::ClientState,
     common::{
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
-        Album, AlbumInfo, Artist, CoverSource, DynamicPlaylist, Rating, Song
+        DynamicPlaylist, Song
     },
-    library::{DynamicPlaylistSongRow, PlaylistSongRow},
-    utils::format_secs_as_duration,
+    utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow
 };
 
-#[derive(Default, Debug, Clone)]
-pub enum CoverPathAction {
-    #[default]
-    NoChange,
-    New(String),
-    Clear
-}
-
-
+use super::{
+    ordering_button::OrderingButton, rule_button::RuleButton, Library,
+    DynamicPlaylistSongRow
+};
 
 mod imp {
-    use std::cell::Cell;
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
+    use std::{cell::Cell, sync::OnceLock};
     use async_channel::Sender;
-    use gio::ListStore;
-    use once_cell::sync::Lazy;
-
-    use crate::{common::DynamicPlaylist, library::{ordering_button::OrderingButton, rule_button::RuleButton}, utils};
+    use glib::subclass::Signal;
 
     use super::*;
 
@@ -53,20 +42,26 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-editor-view.ui")]
     pub struct DynamicPlaylistEditorView {
         #[template_child]
-        pub edit_cover_dialog: TemplateChild<adw::Dialog>,
+        pub overwrite_dialog: TemplateChild<adw::AlertDialog>,
         #[template_child]
-        pub set_cover_btn: TemplateChild<gtk::Button>,
+        pub unsaved_dialog: TemplateChild<adw::AlertDialog>,
         #[template_child]
-        pub clear_cover_btn: TemplateChild<gtk::Button>,
+        pub edit_cover_dialog: TemplateChild<adw::AlertDialog>,
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
         #[template_child]
+        pub cover_btn: TemplateChild<gtk::Button>,
+        #[template_child]
         pub cover: TemplateChild<gtk::Image>,
 
         #[template_child]
+        pub exit_btn: TemplateChild<gtk::Button>,
+        #[template_child]
         pub save_btn: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub save_btn_content: TemplateChild<gtk::Stack>,
 
         #[template_child]
         pub title: TemplateChild<gtk::Entry>,
@@ -108,9 +103,11 @@ mod imp {
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         pub orderings_menu: gio::Menu,
-        pub cover_action: RefCell<CoverPathAction>,
+        pub cover_action: RefCell<ImageAction>,
         pub rules_valid: Cell<bool>,
         pub title_valid: Cell<bool>,
+        pub unsaved: Cell<bool>,
+        pub editing_name: RefCell<Option<String>>,  // If not None, will be in edit mode.
 
         pub library: OnceCell<Library>,
         pub cache: OnceCell<Rc<Cache>>,
@@ -148,11 +145,44 @@ mod imp {
 
         fn constructed(&self) {
             self.parent_constructed();
+
             self.title.connect_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
                     this.obj().validate_title();
+                }
+            ));
+
+            self.description.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_change();
+                }
+            ));
+
+            self.refresh_schedule.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_change();
+                }
+            ));
+
+            self.limit_mode.connect_selected_notify(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_change();
+                }
+            ));
+
+            self.limit.connect_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_change();
                 }
             ));
 
@@ -200,6 +230,16 @@ mod imp {
                 }
             ));
             let _ = self.orderings_model.set(orderings_model);
+
+            self.song_list
+                .bind_property(
+                    "n-items",
+                    &self.track_count.get(),
+                    "label"
+                )
+                .transform_to(|_, n_items: u32| Some(n_items.to_string()))
+                .sync_create()
+                .build();
 
             let action_add_ordering = gio::ActionEntry::builder("add-ordering")
                 .parameter_type(Some(&glib::VariantTy::UINT32))
@@ -265,6 +305,22 @@ mod imp {
                 }
             ));
 
+            self.exit_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().exit();
+                }
+            ));
+
+            self.save_btn.connect_clicked(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.obj().on_save_btn_clicked();
+                }
+            ));
+
             let infobox_revealer = self.infobox_revealer.get();
             let collapse_infobox = self.collapse_infobox.get();
             collapse_infobox
@@ -286,7 +342,17 @@ mod imp {
                 .sync_create()
                 .build();
 
+            // Finally, update sensitivity of buttons
             self.obj().update_sensitivity();
+        }
+
+        fn signals() -> &'static [Signal] {
+            static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
+            SIGNALS.get_or_init(|| {
+                vec![
+                    Signal::builder("exit-clicked").build()
+                ]
+            })
         }
     }
 
@@ -314,17 +380,40 @@ impl DynamicPlaylistEditorView {
         self.imp().cache.get()
     }
 
-    /// Set a user-selected path as the new local cover.
-    // pub fn set_cover(&self, path: &str) {
-    //     if let (Some(album), Some(library)) = (
-    //         self.imp().album.borrow().as_ref(),
-    //         self.imp().library.get()
-    //     ) {
-    //         library.set_cover(album.get_folder_uri(), path);
-    //     }
-    // }
+    fn open_cover_file_dialog(&self) {
+        if let Some(sender) = self.imp().filepath_sender.get() {
+            let sender = sender.clone();
+            tokio_runtime().spawn(async move {
+                match SelectedFiles::open_file()
+                    .title("Select a new cover image")
+                    .modal(true)
+                    .multiple(false)
+                    .send()
+                    .await
+                    .expect("ashpd file open await failure")
+                    .response()
+                {
+                    Ok(files) => {
+                        let uris = files.uris();
+                        if uris.len() > 0 {
+                            let _ = sender.send_blocking(uris[0].to_string());
+                        }
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            });
+        }
+    }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState, window: &EuphonicaWindow) {
+    pub fn setup(
+        &self,
+        library: Library,
+        cache: Rc<Cache>,
+        client_state: ClientState,
+        window: &EuphonicaWindow
+    ) {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
@@ -336,30 +425,63 @@ impl DynamicPlaylistEditorView {
            .expect("DynamicPlaylistEditorView cannot bind to window");
         self.imp().library.set(library).expect("Could not register DynamicPlaylistEditorView with library controller");
 
-        // cache_state.connect_closure(
-        //     "album-art-downloaded",
-        //     false,
-        //     closure_local!(
-        //         #[weak(rename_to = this)]
-        //         self,
-        //         move |_: CacheState, uri: String, thumb: bool, tex: gdk::Texture| {
-        //             if thumb {
-        //                 return;
-        //             }
-        //             if let Some(album) = this.imp().album.borrow().as_ref() {
-        //                 if album.get_folder_uri() == &uri {
-        //                     // Force update since we might have been using an embedded cover
-        //                     // temporarily
-        //                     this.update_cover(tex, CoverSource::Folder);
-        //                 } else if this.imp().cover_source.get() != CoverSource::Folder {
-        //                     if album.get_example_uri() == &uri {
-        //                         this.update_cover(tex, CoverSource::Embedded);
-        //                     }
-        //                 }
-        //             }
-        //         }
-        //     ),
-        // );
+        self.imp().cover_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_| {
+                let cover_name = this.imp().cover_action.borrow_mut();
+                match *cover_name {
+                    ImageAction::Unknown | ImageAction::Clear | ImageAction::Existing(false) => {
+                        // Open file chooser directly
+                        this.open_cover_file_dialog();
+                    }
+                    _ => {
+                        let dialog = this.imp().edit_cover_dialog.get();
+                        dialog.choose(
+                            &this,
+                            Option::<gio::Cancellable>::None.as_ref(),
+                            clone!(
+                                #[weak]
+                                this,
+                                move |resp| {
+                                    match resp.as_str() {
+                                        "replace" => {
+                                            this.open_cover_file_dialog();
+                                        }
+                                        "clear" => {
+                                            this.clear_cover();
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            ),
+                        );
+                    }
+                }
+            }
+        ));
+
+        cache_state.connect_closure(
+            "playlist-cover-downloaded",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
+                    if !thumb {
+                        return;
+                    }
+                    // Match by old name if editing an existing playlist
+                    if let Some(old_name) = this.imp().editing_name.borrow().as_ref() {
+                        if name.as_str() == old_name {
+                            this.imp().cover_action.replace(ImageAction::Existing(true));
+                            this.imp().cover.set_paintable(Some(&tex));
+                        }
+                    }
+                }
+            )
+        );
+
         // cache_state.connect_closure(
         //     "album-art-cleared",
         //     false,
@@ -405,8 +527,10 @@ impl DynamicPlaylistEditorView {
         let (sender, receiver) = async_channel::unbounded::<String>();
         let _ = self.imp().filepath_sender.set(sender);
         glib::MainContext::default().spawn_local(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             async move {
                 use futures::prelude::*;
                 // Allow receiver to be mutated, but keep it at the same memory address.
@@ -414,7 +538,7 @@ impl DynamicPlaylistEditorView {
                 let mut receiver = std::pin::pin!(receiver);
 
                 while let Some(path) = receiver.next().await {
-                    this.set_cover(&path);
+                    this.set_cover_path(&path);
                 }
             }
         ));
@@ -424,7 +548,7 @@ impl DynamicPlaylistEditorView {
 
         // Create an empty `AlbumSongRow` during setup
         factory.connect_setup(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
             move |_, list_item| {
                 let item = list_item
@@ -474,26 +598,17 @@ impl DynamicPlaylistEditorView {
         self.imp().content.set_model(Some(
             &gtk::NoSelection::new(Some(self.imp().song_list.clone()))
         ));
-        // Setup click action
-        // self.imp().content.connect_activate(clone!(
-        //     #[strong(rename_to = this)]
-        //     self,
-        //     move |_, position| {
-        //         if let (Some(album), Some(library)) = (
-        //             this.imp().album.borrow().as_ref(),
-        //             this.get_library()
-        //         ) {
-        //             library.queue_album(album.clone(), true, true, Some(position as u32));
-        //         }
-        //     }
-        // ));
+    }
+
+    fn on_change(&self) {
+        self.imp().unsaved.set(true);
+        self.update_sensitivity();
     }
 
     fn validate_title(&self) {
         let entry = self.imp().title.get();
         let is_valid = entry.text_length() > 0;
         let old_valid = self.imp().title_valid.replace(is_valid);
-
 
         if !is_valid && !entry.has_css_class("error") {
             entry.add_css_class("error");
@@ -504,6 +619,8 @@ impl DynamicPlaylistEditorView {
         if old_valid != is_valid {
             self.update_sensitivity();
         }
+
+        self.on_change();
     }
 
     fn validate_rules(&self) {
@@ -533,6 +650,8 @@ impl DynamicPlaylistEditorView {
         if old_rules_valid != new_rules_valid {
             self.update_sensitivity();
         }
+
+        self.on_change();
     }
 
     /// Never allow the ordering section to fall into an invalid state by enforcing
@@ -586,28 +705,39 @@ impl DynamicPlaylistEditorView {
                 }
             }
         }
+
+        self.on_change();
     }
 
     fn update_sensitivity(&self) {
         let rules_valid = self.imp().rules_valid.get();
         let title_valid = self.imp().title_valid.get();
-        self.imp().save_btn.set_sensitive(rules_valid && title_valid);
+        let unsaved = self.imp().unsaved.get();
+        self.imp().save_btn.set_sensitive(rules_valid && title_valid && unsaved);
         self.imp().refresh_btn.set_sensitive(rules_valid);
     }
 
-    fn clear_cover(&self) {
-        self.imp().cover_action.replace(CoverPathAction::Clear);
-        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-    }
-
     /// Set a user-selected path as the new local cover.
-    pub fn set_cover(&self, path: &str) {
-        self.imp().cover_action.replace(CoverPathAction::New(path.to_owned()));
-        self.imp().cover.set_from_file(Some(path));
+    pub fn set_cover_path(&self, path: &str) {
+        // Assume ashpd always return filesystem spec
+        let filepath = urlencoding::decode(if path.starts_with("file://") {
+            &path[7..]
+        } else {
+            path
+        }).expect("Path must be in UTF-8").into_owned();
+        self.imp().cover_action.replace(ImageAction::New(filepath.clone()));
+        self.imp().cover.set_from_file(Some(filepath));
+        self.on_change();
     }
 
-    fn schedule_cover(&self, dp: &DynamicPlaylist) {
-        self.imp().cover_action.replace(CoverPathAction::NoChange);
+    fn clear_cover(&self) {
+        self.imp().cover_action.replace(ImageAction::Clear);
+        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+        self.on_change();
+    }
+
+    fn schedule_existing_cover(&self, dp: &DynamicPlaylist) {
+        self.imp().cover_action.replace(ImageAction::Existing(false)); // for now
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
         if let Some(tex) = self
             .imp()
@@ -616,6 +746,7 @@ impl DynamicPlaylistEditorView {
             .unwrap()
             .clone()
             .load_cached_playlist_cover(&dp.name, false) {
+                self.imp().cover_action.replace(ImageAction::Existing(true));
                 self.imp().cover.set_paintable(Some(&tex));
             }
     }
@@ -698,7 +829,116 @@ impl DynamicPlaylistEditorView {
         }
     }
 
-    pub fn bind(&self, dp: DynamicPlaylist) {
+    fn finalize_save(&self) {
+        let dp = self.build_dynamic_playlist();
+        let cache = self.imp().cache.get().unwrap();
+        let cover_action = self.imp().cover_action.borrow().to_owned();
+        // Always overwrite, as we'd only reach here after user confirmation
+        let handle = cache.insert_dynamic_playlist(
+            dp,
+            cover_action,
+            Some(
+                self
+                    .imp()
+                    .editing_name
+                    .borrow()
+                    .as_deref()
+                    .unwrap_or(
+                        self
+                            .imp()
+                            .title
+                            .text()
+                            .as_str()
+                    )
+                    .to_string()
+            )
+        );
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                let res = handle.await.unwrap();
+                let stack = this.imp().save_btn_content.get();
+                if stack.visible_child_name().unwrap() != "label" {
+                    stack.set_visible_child_name("label");
+                }
+                match res {
+                    Ok(()) => {
+                        this.imp().unsaved.set(false);
+                        this.exit();
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                        this.imp().unsaved.set(true);
+                        this.update_sensitivity();
+                    }
+                }
+            }
+        ));
+    }
+
+    // Overwrite parameter is not applicable when editing an existing playlist.
+    fn on_save_btn_clicked(&self) {
+        let btn = self.imp().save_btn.get();
+        let stack = self.imp().save_btn_content.get();
+        btn.set_sensitive(false);
+        if stack.visible_child_name().unwrap() != "spinner" {
+            stack.set_visible_child_name("spinner");
+        }
+        let editing: bool;
+        {
+            editing = self.imp().editing_name.borrow().is_some();
+        }
+        if !editing && sqlite::exists_dynamic_playlist(self.imp().title.text().as_str()).unwrap_or(false) {
+            // If creating a new playlist, ask for confirmation before overwriting
+            let dialog = self.imp().overwrite_dialog.get();
+            dialog.choose(
+                self,
+                Option::<gio::Cancellable>::None.as_ref(),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |resp| {
+                        if resp == "overwrite" {
+                            this.finalize_save();
+                        }
+                    }
+                ),
+            );
+        } else {
+            // Just overwrite if editing an existing playlist
+            self.finalize_save();
+        }
+    }
+
+    fn exit(&self) {
+        if self.imp().unsaved.get() {
+            let dialog = self.imp().unsaved_dialog.get();
+            dialog.choose(
+                self,
+                Option::<gio::Cancellable>::None.as_ref(),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |resp| {
+                        match resp.as_str() {
+                            "save" => {
+                                this.on_save_btn_clicked();
+                            }
+                            "discard" => {
+                                this.emit_by_name::<()>("exit_clicked", &[]);
+                            }
+                            _ => {}
+                        }
+                    }
+                ),
+            );
+        } else {
+            self.emit_by_name::<()>("exit_clicked", &[]);
+        }
+    }
+
+    pub fn init(&self, dp: DynamicPlaylist) {
         // let title_label = self.imp().title.get();
         // let artists_box = self.imp().artists_box.get();
         // let rating = self.imp().rating.get();
@@ -774,39 +1014,6 @@ impl DynamicPlaylistEditorView {
         // self.imp().album.borrow_mut().replace(album);
     }
 
-    pub fn unbind(&self) {
-        // for binding in self.imp().bindings.borrow_mut().drain(..) {
-        //     binding.unbind();
-        // }
-
-        // // Clear artists wrapbox. TODO: when adw 1.8 drops as stable please use remove_all() instead.
-        // for tag in self.imp().artist_tags.iter::<gtk::Widget>() {
-        //     self.imp().artists_box.remove(&tag.unwrap());
-        // }
-        // self.imp().artist_tags.remove_all();
-
-        // if let Some(id) = self.imp().cover_signal_id.take() {
-        //     if let Some(cache) = self.imp().cache.get() {
-        //         cache.get_cache_state().disconnect(id);
-        //     }
-        // }
-        // if let Some(_) = self.imp().album.take() {
-        //     self.clear_cover();
-        // }
-
-
-        // Unset metadata widgets
-        // self.imp().song_list.remove_all();
-        // let content_spinner = self.imp().content_spinner.get();
-        // if content_spinner.visible_child_name().unwrap() != "spinner" {
-        //     content_spinner.set_visible_child_name("spinner");
-        // }
-        // let infobox_spinner = self.imp().infobox_spinner.get();
-        // if infobox_spinner.visible_child_name().unwrap() != "spinner" {
-        //     infobox_spinner.set_visible_child_name("spinner");
-        // }
-    }
-
     fn add_songs(&self, songs: &[Song]) {
         // If this is called with an empty list, it indicates the queried DP is empty.
         if songs.is_empty() {
@@ -821,20 +1028,18 @@ impl DynamicPlaylistEditorView {
             self.imp().content_pages.set_visible_child_name("content");
             self.imp().song_list.extend_from_slice(songs);
         }
-        // self.imp()
-        //     .track_count
-        //     .set_label(&self.imp().song_list.n_items().to_string());
-        // self.imp().runtime.set_label(&format_secs_as_duration(
-        //     self.imp()
-        //         .song_list
-        //         .iter()
-        //         .map(|item: Result<Song, _>| {
-        //             if let Ok(song) = item {
-        //                 return song.get_duration();
-        //             }
-        //             0
-        //         })
-        //         .sum::<u64>() as f64,
-        // ));
+
+        self.imp().runtime.set_label(&format_secs_as_duration(
+            self.imp()
+                .song_list
+                .iter()
+                .map(|item: Result<Song, _>| {
+                    if let Ok(song) = item {
+                        return song.get_duration();
+                    }
+                    0
+                })
+                .sum::<u64>() as f64,
+        ));
     }
 }

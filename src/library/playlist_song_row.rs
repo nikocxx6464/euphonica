@@ -312,8 +312,10 @@ impl PlaylistSongRow {
         )));
 
         self.imp().replace_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(library), Some(song)) = (this.imp().library.get(), this.song()) {
                     library.queue_uri(song.get_uri(), true, true, false);
@@ -322,8 +324,10 @@ impl PlaylistSongRow {
         ));
 
         self.imp().append_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(library), Some(song)) = (this.imp().library.get(), this.song()) {
                     library.queue_uri(song.get_uri(), false, false, false);
@@ -332,8 +336,10 @@ impl PlaylistSongRow {
         ));
 
         self.imp().raise.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(item) = this.imp().item.upgrade() {
                     this.imp().content_view.get().unwrap().shift_backward(item.position());
@@ -342,8 +348,10 @@ impl PlaylistSongRow {
         ));
 
         self.imp().lower.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(item) = this.imp().item.upgrade() {
                     this.imp().content_view.get().unwrap().shift_forward(item.position());
@@ -352,8 +360,10 @@ impl PlaylistSongRow {
         ));
 
         self.imp().remove.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(item) = this.imp().item.upgrade() {
                     this.imp().content_view.get().unwrap().remove(item.position());

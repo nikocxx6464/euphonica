@@ -293,8 +293,10 @@ mod imp {
             let obj = self.obj();
             let action_set_cover = ActionEntry::builder("set-cover")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let Some(sender) = obj.imp().filepath_sender.get() {
                             let sender = sender.clone();
@@ -324,8 +326,10 @@ mod imp {
                 .build();
             let action_clear_cover = ActionEntry::builder("clear-cover")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         let title = obj.imp().title.label();
                         if !title.is_empty() {
@@ -489,7 +493,7 @@ impl PlaylistContentView {
         let (sender, receiver) = async_channel::unbounded::<String>();
         let _ = self.imp().filepath_sender.set(sender);
         glib::MainContext::default().spawn_local(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
             async move {
                 use futures::prelude::*;
@@ -585,8 +589,10 @@ impl PlaylistContentView {
 
         let replace_queue_btn = self.imp().replace_queue.get();
         replace_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -609,8 +615,10 @@ impl PlaylistContentView {
         ));
         let append_queue_btn = self.imp().append_queue.get();
         append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -704,8 +712,10 @@ impl PlaylistContentView {
         ));
 
         delete_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {

@@ -38,7 +38,9 @@ pub enum ProviderMessage {
     ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
     ArtistMetaAvailable(String), // Only return name
     Lyrics(SongInfo),
-    LyricsAvailable(String) // Only return full URI
+    LyricsAvailable(String), // Only return full URI
+    DynamicPlaylistSaved,    // No need for name as there is only ever one DP being edited at any time
+    DynamicPlaylistDeleted
 }
 
 /// Common provider-agnostic utilities.

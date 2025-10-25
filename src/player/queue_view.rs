@@ -140,7 +140,7 @@ mod imp {
 
             let action_clear_rating = gio::ActionEntry::builder("clear-rating")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
                     move |_, _, _| {
                         if let Some(player) = obj.imp().player.upgrade() {

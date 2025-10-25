@@ -43,11 +43,11 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
                 conn.execute_batch("create table if not exists `queries` (
     `name` VARCHAR not null,
     `description` VARCHAR not null,
+    `cover_name` VARCHAR null,
     `last_modified` DATETIME not null,
     `last_queued` DATETIME null,
     `play_count` INTEGER not null,
-    `rules` BLOB not null,
-    `ordering` BLOB not null,
+    `bson` BLOB not null,
     `last_refresh` DATETIME null,
     `auto_refresh` VARCHAR not null,
     `limit` INTEGER null,
@@ -233,11 +233,11 @@ create unique index if not exists `image_key` on `images` (
 create table if not exists `queries` (
     `name` VARCHAR not null,
     `description` VARCHAR not null,
+    `cover_name` VARCHAR null,
     `last_modified` DATETIME not null,
     `last_queued` DATETIME null,
     `play_count` INTEGER not null,
-    `rules` BLOB not null,
-    `ordering` BLOB not null,
+    `bson` BLOB not null,
     `last_refresh` DATETIME null,
     `auto_refresh` VARCHAR not null,
     `limit` INTEGER null,
@@ -266,11 +266,12 @@ end;
 #[derive(Debug)]
 pub enum Error {
     BytesToDocError,
-    DocToMetaError,
-    MetaToDocError,
-    DocToBytesError,
+    DocToObjectError,
+    ObjectToDocError(bson::error::Error),
+    DocToBytesError(bson::error::Error),
     DbError(SqliteError),
     InsufficientKey,
+    KeyAlreadyExists
 }
 
 pub struct AlbumMetaRow {
@@ -286,10 +287,11 @@ impl TryInto<AlbumMeta> for AlbumMetaRow {
     type Error = Error;
     fn try_into(self) -> Result<AlbumMeta, Self::Error> {
         let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-        .map_err(|_| Error::DocToMetaError)
+        bson::deserialize_from_document(
+            bson::Document
+                ::from_reader(&mut reader)
+                .map_err(|_| Error::BytesToDocError)?
+        ).map_err(|_| Error::DocToObjectError)
     }
 }
 
@@ -318,10 +320,11 @@ impl TryInto<ArtistMeta> for ArtistMetaRow {
     type Error = Error;
     fn try_into(self) -> Result<ArtistMeta, Self::Error> {
         let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-        .map_err(|_| Error::DocToMetaError)
+        bson::deserialize_from_document(
+            bson::Document
+                ::from_reader(&mut reader)
+                .map_err(|_| Error::BytesToDocError)?
+        ).map_err(|_| Error::DocToObjectError)
     }
 }
 
@@ -449,7 +452,11 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
             &album.title,
             &album.get_artist_tag(),
             OffsetDateTime::now_utc(),
-            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+            bson::serialize_to_vec(
+                &bson
+                    ::serialize_to_document(meta)
+                    .map_err(|e| Error::ObjectToDocError(e))?
+            ).map_err(|e| Error::DocToBytesError(e))?
         ]
     ).map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;
@@ -472,8 +479,9 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
             &artist.name,
             &artist.mbid,
             OffsetDateTime::now_utc(),
-            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?
+            bson::serialize_to_vec(
+                &bson::serialize_to_document(meta).map_err(|e| Error::ObjectToDocError(e))?
+            ).map_err(|e| Error::DocToBytesError(e))?
         ],
     )
     .map_err(|e| Error::DbError(e))?;
@@ -491,7 +499,7 @@ pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
     match query {
         Ok(row) => {
             if row.lyrics.len() > 0 {
-                let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
+                let res = row.try_into().map_err(|_| Error::DocToObjectError)?;
                 return Ok(Some(res));
             }
             else {
@@ -744,10 +752,45 @@ pub fn clear_history() -> Result<(), Error> {
     Ok(())
 }
 
-pub fn insert_dynamic_playlist(dp: &DynamicPlaylist) -> Result<(), Error> {
+pub fn exists_dynamic_playlist(name: &str) -> Result<bool, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select count(name) from queries where name = ?1")
+        .unwrap();
+    Ok(
+        query
+        .query_map(params![name], |r| Ok(r.get::<usize, usize>(0)?))
+        .map_err(|e| Error::DbError(e))?
+        .map(|r| r.unwrap())
+        .collect::<Vec<usize>>()[0] > 0
+    )
+}
+
+pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str>) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
     let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from queries where name = ?1", params![&dp.name]).map_err(|e| Error::DbError(e))?;
+
+    if let Some(to_overwrite) = overwrite_name {
+        // This allows us to both edit and rename an existing DP in one call
+        tx
+            .execute("delete from queries where name = ?1", params![&to_overwrite])
+            .map_err(|e| Error::DbError(e))?;
+
+        // Migrate image cache entry (if one exists) to new name
+        if to_overwrite != &dp.name {
+            tx
+                .execute("update queries set key = ?1 where key = ?2", params![
+                    &format!("dynamic_playlist:")
+                ]);
+        }
+    }
+
+    // Bail out if current name already exists. The overwriting case should have already
+    // removed the existing option in the above logic.
+    if exists_dynamic_playlist(&dp.name)? {
+        tx.rollback().map_err(|e| Error::DbError(e))?;
+        return Err(Error::KeyAlreadyExists);
+    }
 
     let last_queued = dp
         .last_queued
@@ -760,31 +803,27 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist) -> Result<(), Error> {
         .flatten();
 
     tx.execute(
-        "insert into queries (
-name,
-description,
-last_modified,
-last_queued,
-play_count,
-rules,
-ordering,
-auto_refresh,
-last_refresh,
-limit
-) values (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+        "insert into queries
+(name, description, last_modified, last_queued, play_count, bson, auto_refresh, last_refresh, `limit`)
+values (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
         params![
             &dp.name,
             &dp.description,
             OffsetDateTime::now_utc(),
             last_queued,
             &dp.play_count,
-            bson::to_vec(&bson::to_document(&dp.rules).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
-            bson::to_vec(&bson::to_document(&dp.ordering).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?,
+            bson::serialize_to_vec(
+                &bson::doc!{
+                    "rules": bson::serialize_to_bson(&dp.rules).map_err(|e| Error::ObjectToDocError(e))?,
+                    "ordering": bson::serialize_to_bson(&dp.ordering).map_err(|e| Error::ObjectToDocError(e))?
+                }
+            ).map_err(|e| Error::DocToBytesError(e))?,
             &dp.auto_refresh.to_str(),
             last_refresh,
             &dp.limit
         ]
     ).map_err(|e| Error::DbError(e))?;
+
     tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
 }

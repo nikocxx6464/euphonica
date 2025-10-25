@@ -316,8 +316,10 @@ impl PlayerBar {
             "outputs-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
@@ -329,8 +331,10 @@ impl PlayerBar {
             "cover-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);
                 }

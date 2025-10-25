@@ -460,8 +460,10 @@ impl PlayerPane {
         // Labels at 20% opacity.
         let lyrics_box = imp.lyrics_box.get();
         lyrics_box.bind_model(Some(&lyric_lines), clone!(
-            #[strong]
+            #[weak]
             player,
+            #[upgrade_or]
+            gtk::Label::default().into(),
             move |line| {
                 let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
                 widget.set_halign(gtk::Align::Center);
@@ -475,7 +477,7 @@ impl PlayerPane {
         ));
 
         lyrics_box.connect_row_activated(clone!(
-            #[strong]
+            #[weak]
             player,
             move |_, row: &gtk::ListBoxRow| {
                 player.seek_to_lyric_line(row.index());
@@ -499,7 +501,7 @@ impl PlayerPane {
             "outputs-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
                 move |player: Player| {
                     this.update_outputs(&player);
@@ -512,7 +514,7 @@ impl PlayerPane {
             "cover-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);

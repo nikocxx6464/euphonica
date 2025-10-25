@@ -138,8 +138,10 @@ impl Library {
             "album-basic-info-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, album: Album| {
                     this.imp().albums.append(&album);
                 }
@@ -150,8 +152,10 @@ impl Library {
             "recent-album-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, album: Album| {
                     this.imp().recent_albums.append(&album);
                 }
@@ -162,8 +166,10 @@ impl Library {
             "artist-basic-info-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, artist: Artist| {
                     this.imp().artists.append(&artist);
                 }
@@ -174,8 +180,10 @@ impl Library {
             "recent-artist-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, artist: Artist| {
                     this.imp().recent_artists.append(&artist);
                 }

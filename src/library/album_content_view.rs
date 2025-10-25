@@ -171,8 +171,10 @@ mod imp {
             let obj = self.obj();
             let action_clear_rating = ActionEntry::builder("clear-rating")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
@@ -186,8 +188,10 @@ mod imp {
                 .build();
             let action_set_album_art = ActionEntry::builder("set-album-art")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let Some(sender) = obj.imp().filepath_sender.get() {
                             let sender = sender.clone();
@@ -217,8 +221,10 @@ mod imp {
                 .build();
             let action_clear_album_art = ActionEntry::builder("clear-album-art")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
@@ -232,8 +238,10 @@ mod imp {
 
             let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
@@ -253,8 +261,10 @@ mod imp {
 
             let action_insert_queue = ActionEntry::builder("insert-queue")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (_, Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
@@ -475,8 +485,10 @@ impl AlbumContentView {
                 "changed",
                 false,
                 closure_local!(
-                    #[strong(rename_to = this)]
+                    #[weak(rename_to = this)]
                     self,
+                    #[upgrade_or]
+                    (),
                     move |rating: Rating| {
                         if let (Some(album), Some(library)) = (
                             this.imp().album.borrow().as_ref(),
@@ -549,8 +561,10 @@ impl AlbumContentView {
             .sync_create()
             .build();
         replace_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(album), Some(library)) = (
                     this.imp().album.borrow().as_ref(),
@@ -580,8 +594,10 @@ impl AlbumContentView {
             .sync_create()
             .build();
         append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(album), Some(library)) = (
                     this.imp().album.borrow().as_ref(),
@@ -610,8 +626,10 @@ impl AlbumContentView {
         let (sender, receiver) = async_channel::unbounded::<String>();
         let _ = self.imp().filepath_sender.set(sender);
         glib::MainContext::default().spawn_local(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             async move {
                 use futures::prelude::*;
                 // Allow receiver to be mutated, but keep it at the same memory address.
@@ -629,8 +647,10 @@ impl AlbumContentView {
 
         // Create an empty `AlbumSongRow` during setup
         factory.connect_setup(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
@@ -681,8 +701,10 @@ impl AlbumContentView {
 
         // Setup click action
         self.imp().content.connect_activate(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_, position| {
                 if let (Some(album), Some(library)) = (
                     this.imp().album.borrow().as_ref(),

@@ -234,8 +234,10 @@ impl ArtistSongRow {
         )));
 
         self.imp().replace_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
                     library.queue_uri(song.get_uri(), true, true, false);
@@ -244,8 +246,10 @@ impl ArtistSongRow {
         ));
 
         self.imp().append_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(library), Some(song)) = (this.imp().library.get(), this.imp().song.borrow().as_ref()) {
                     library.queue_uri(song.get_uri(), false, false, false);

@@ -24,7 +24,7 @@ use std::{
     cell::OnceCell, fmt, fs::create_dir_all, path::PathBuf, rc::Rc, sync::{Arc, RwLock}
 };
 
-use crate::{common::SongInfo, meta_providers::{get_provider, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
+use crate::{common::{DynamicPlaylist, SongInfo}, meta_providers::{get_provider, models::{ArtistMeta, Lyrics}}, utils::strip_filename_linux};
 use crate::{
     client::{BackgroundTask, MpdWrapper},
     common::{AlbumInfo, ArtistInfo},
@@ -68,6 +68,73 @@ pub fn get_new_image_paths() -> (PathBuf, PathBuf) {
     path.push(Uuid::new_v4().simple().to_string() + ".png");
     thumbnail_path.push(Uuid::new_v4().simple().to_string() + ".png");
     (path, thumbnail_path)
+}
+
+#[derive(Default, Debug, Clone)]
+pub enum ImageAction {
+    #[default]
+    Unknown,
+    /// Bool flag indicates whether the current resource (playlist, album, etc)
+    /// already has an image or not
+    Existing(bool),
+    /// Containing disk path to new image file.
+    New(String),
+    Clear
+}
+
+fn set_image_internal(key: &String, key_prefix: Option<&'static str>, filepath: &str) -> Option<(Texture, Texture)> {
+    let maybe_ptr = ImageReader::open(filepath);
+    if let Ok(Ok(dyn_img)) = maybe_ptr.map(|ptr| ptr.decode()) {
+        let (hires_path, thumbnail_path) = get_new_image_paths();
+        let (hires, thumbnail) = resize_convert_image(dyn_img);
+        if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
+            sqlite::register_image_key(
+                key.clone(), key_prefix,
+                Some(hires_path.file_name().unwrap().to_str().unwrap().to_owned()), false
+            ).join().unwrap().expect("Unable to register image key");
+            sqlite::register_image_key(
+                key.clone(), key_prefix,
+                Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned()), true
+            ).join().unwrap().expect("Unable to register image key");
+        }
+        // TODO: Optimise to avoid reading back from disk
+        let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
+        let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
+        {
+            let mut cache = IMAGE_CACHE.lock().unwrap();
+            cache.put(
+                hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                hires_tex.clone()
+            );
+            cache.put(
+                thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned(),
+                thumbnail_tex.clone(),
+            );
+        }
+        Some((hires_tex, thumbnail_tex))
+    }
+    else {
+        None
+    }
+}
+
+fn clear_image_internal(key: &String, key_prefix: Option<&'static str>) {
+    if let Some(hires_name) = sqlite::find_image_by_key(&key, key_prefix, false).unwrap() {
+        let mut hires_path = get_image_cache_path();
+        hires_path.push(&hires_name);
+        sqlite::unregister_image_key(key.clone(), key_prefix, false)
+            .join().unwrap().expect("Unable to unregister image key");
+        IMAGE_CACHE.lock().unwrap().pop(&hires_name);
+        let _ = std::fs::remove_file(hires_path);
+    }
+    if let Some(thumb_name) = sqlite::find_image_by_key(&key, key_prefix, true).unwrap() {
+        let mut thumb_path = get_image_cache_path();
+        thumb_path.push(&thumb_name);
+        sqlite::unregister_image_key(key.clone(), key_prefix, true)
+            .join().unwrap().expect("Unable to unregister image key");
+        IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
+        let _ = std::fs::remove_file(thumb_path);
+    }
 }
 
 // In-memory image cache.
@@ -698,7 +765,6 @@ impl Cache {
     {
         let fg_sender = self.fg_sender.clone();
         let key = key.to_owned();
-        let (hires_path, thumbnail_path) = get_new_image_paths();
         // Assume ashpd always return filesystem spec
         let filepath = urlencoding::decode(if path.starts_with("file://") {
             &path[7..]
@@ -706,39 +772,8 @@ impl Cache {
             path
         }).expect("Path must be in UTF-8").into_owned();
         gio::spawn_blocking(move || {
-            let maybe_ptr = ImageReader::open(&filepath);
-            if let Ok(ptr) = maybe_ptr {
-                if let Ok(dyn_img) = ptr.decode() {
-                    let (hires, thumbnail) = resize_convert_image(dyn_img);
-                    if let (Ok(_), Ok(_)) = (hires.save(&hires_path), thumbnail.save(&thumbnail_path)) {
-                        sqlite::register_image_key(
-                            key.clone(), key_prefix,
-                            Some(hires_path.file_name().unwrap().to_str().unwrap().to_owned()), false
-                        ).join().unwrap().expect("Unable to register image key");
-                        sqlite::register_image_key(
-                            key.clone(), key_prefix,
-                            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned()), true
-                        ).join().unwrap().expect("Unable to register image key");
-                    }
-                    // TODO: Optimise to avoid reading back from disk
-                    let hires_tex = gdk::Texture::from_filename(&hires_path).unwrap();
-                    let thumbnail_tex = gdk::Texture::from_filename(&thumbnail_path).unwrap();
-                    {
-                        let mut cache = IMAGE_CACHE.lock().unwrap();
-                        cache.put(
-                            hires_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            hires_tex.clone()
-                        );
-                        cache.put(
-                            thumbnail_path.file_name().unwrap().to_str().unwrap().to_owned(),
-                            thumbnail_tex.clone(),
-                        );
-                    }
-                    respond(fg_sender, key, hires_tex, thumbnail_tex);
-                }
-            }
-            else {
-                println!("{:?}", maybe_ptr.err());
+            if let Some((hires_tex, thumbnail_tex)) = set_image_internal(&key, key_prefix, &filepath) {
+                respond(fg_sender, key, hires_tex, thumbnail_tex);
             }
         });
     }
@@ -753,24 +788,8 @@ impl Cache {
         let fg_sender = self.fg_sender.clone();
         let key = key.to_owned();
         gio::spawn_blocking(move || {
-            if let Some(hires_name) = sqlite::find_image_by_key(&key, key_prefix, false).unwrap() {
-                let mut hires_path = get_image_cache_path();
-                hires_path.push(&hires_name);
-                sqlite::unregister_image_key(key.clone(), key_prefix, false)
-                    .join().unwrap().expect("Unable to unregister image key");
-                IMAGE_CACHE.lock().unwrap().pop(&hires_name);
-                let _ = std::fs::remove_file(hires_path);
-            }
-            if let Some(thumb_name) = sqlite::find_image_by_key(&key, key_prefix, true).unwrap() {
-                let mut thumb_path = get_image_cache_path();
-                thumb_path.push(&thumb_name);
-                sqlite::unregister_image_key(key.clone(), key_prefix, true)
-                    .join().unwrap().expect("Unable to unregister image key");
-                IMAGE_CACHE.lock().unwrap().pop(&thumb_name);
-                let _ = std::fs::remove_file(thumb_path);
-            }
+            clear_image_internal(&key, key_prefix);
             respond(fg_sender, key);
-            // let _ = fg_sender.send_blocking(ProviderMessage::FolderCoverCleared(folder_uri));
         });
     }
 
@@ -967,6 +986,31 @@ impl Cache {
         }
         None
     }
+
+
+    pub fn insert_dynamic_playlist(
+        &self,
+        dp: DynamicPlaylist,
+        cover_action: ImageAction,
+        overwrite_name: Option<String>
+    ) -> gio::JoinHandle<Result<(), sqlite::Error>> {
+        gio::spawn_blocking(move || {
+            // If updating an existing DP, use old name first. SQLite code will migrate it for us.
+            let current_cover_key = overwrite_name.clone().unwrap_or_else(|| {dp.name.to_string()});
+            match cover_action {
+                ImageAction::Clear => {
+                    clear_image_internal(&current_cover_key, Some("dynamic_playlist"));
+                }
+                ImageAction::New(path) => {
+                    let _ = set_image_internal(&current_cover_key, Some("dynamic_playlist"), &path);
+                }
+                _ => {}
+            };
+
+            sqlite::insert_dynamic_playlist(&dp, overwrite_name.as_deref())
+        })
+    }
+
 
     pub fn load_cached_lyrics(&self, song: &SongInfo) -> Option<Lyrics> {
         let result = sqlite::find_lyrics(song);

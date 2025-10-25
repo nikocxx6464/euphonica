@@ -177,10 +177,11 @@ impl PlaylistRow {
         )));
 
         self.imp().replace_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
-
                 if let (Some(library), Some(playlist)) = (this.imp().library.get(), this.imp().playlist.borrow().as_ref()) {
                     library.queue_playlist(playlist.get_uri(), true, true);
                 }
@@ -188,8 +189,10 @@ impl PlaylistRow {
         ));
 
         self.imp().append_queue.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let (Some(library), Some(playlist)) = (this.imp().library.get(), this.imp().playlist.borrow().as_ref()) {
                     library.queue_playlist(playlist.get_uri(), false, false);

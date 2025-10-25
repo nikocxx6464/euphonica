@@ -199,8 +199,10 @@ mod imp {
             let obj = self.obj();
             let action_set_avatar = ActionEntry::builder("set-avatar")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let Some(sender) = obj.imp().filepath_sender.get() {
                             let sender = sender.clone();
@@ -230,8 +232,10 @@ mod imp {
                 .build();
             let action_clear_avatar = ActionEntry::builder("clear-avatar")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
@@ -245,8 +249,10 @@ mod imp {
 
             let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
@@ -444,8 +450,10 @@ impl ArtistContentView {
             .sync_create()
             .build();
         replace_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
                     let library = this.imp().library.get().unwrap();
@@ -473,8 +481,10 @@ impl ArtistContentView {
             .sync_create()
             .build();
         append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
                     let library = this.imp().library.get().unwrap();
@@ -650,8 +660,10 @@ impl ArtistContentView {
         let (sender, receiver) = async_channel::unbounded::<String>();
         let _ = self.imp().filepath_sender.set(sender);
         glib::MainContext::default().spawn_local(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             async move {
                 use futures::prelude::*;
                 // Allow receiver to be mutated, but keep it at the same memory address.

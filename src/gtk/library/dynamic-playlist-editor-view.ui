@@ -2,33 +2,46 @@
 <interface>
   <requires lib="gtk" version="4.0"/>
   <template class="EuphonicaDynamicPlaylistEditorView" parent="GtkWidget">
-    <object class="AdwDialog" id="edit_cover_dialog">
-      <property name="child">
-        <object class="GtkBox">
-          <property name="orientation">1</property>
-          <property name="spacing">6</property>
-          <child>
-            <object class="GtkButton" id="set_cover_btn">
-              <property name="label" translatable="true">Set new cover</property>
-              <property name="hexpand">true</property>
-            </object>
-          </child>
-          <child>
-            <object class="GtkButton" id="clear_cover_btn">
-              <property name="label" translatable="true">Clear cover</property>
-              <property name="hexpand">true</property>
-              <style>
-                <class name="destructive-action"/>
-              </style>
-            </object>
-          </child>
-        </object>
-      </property>
+    <object class="AdwAlertDialog" id="overwrite_dialog">
+      <property name="heading" translatable="yes">Overwrite Existing Playlist?</property>
+      <property name="body" translatable="yes">There is already a Dynamic Playlist with this name. Would you like to overwrite it?.</property>
+      <property name="default-response">save</property>
+      <property name="close-response">cancel</property>
+      <responses>
+        <response id="cancel" translatable="yes">_Cancel</response>
+        <response id="overwrite" translatable="yes" appearance="suggested">_Overwrite</response>
+      </responses>
+    </object>
+    <object class="AdwAlertDialog" id="unsaved_dialog">
+      <property name="heading" translatable="yes">Save Changes?</property>
+      <property name="body" translatable="yes">You have unsaved changes in the editor. Would you like to save them?</property>
+      <property name="default-response">save</property>
+      <property name="close-response">cancel</property>
+      <responses>
+        <response id="cancel" translatable="yes">_Cancel</response>
+        <response id="discard" translatable="yes" appearance="destructive">_Discard</response>
+        <response id="save" translatable="yes" appearance="suggested">_Save</response>
+      </responses>
+    </object>
+    <object class="AdwAlertDialog" id="edit_cover_dialog">
+      <property name="heading" translatable="yes">Edit Cover</property>
+      <property name="close-response">cancel</property>
+      <responses>
+        <response id="cancel" translatable="yes">_Cancel</response>
+        <response id="clear" translatable="yes" appearance="destructive">Clea_r</response>
+        <response id="replace" translatable="yes" appearance="suggested">_Replace</response>
+      </responses>
     </object>
     <child>
       <object class="AdwToolbarView">
         <child type="top">
           <object class="AdwHeaderBar">
+            <property name="show-back-button">false</property>
+            <child type="start">
+              <object class="GtkButton" id="exit_btn">
+                <property name="icon-name">left-symbolic</property>
+              </object>
+            </child>
             <property name="title-widget">
               <object class="AdwWindowTitle">
                 <property name="title" translatable="true">Edit Dynamic Playlist</property>
@@ -36,7 +49,28 @@
             </property>
             <child type="end">
               <object class="GtkButton" id="save_btn">
-                <property name="label" translatable="true">Save</property>
+                <child>
+                  <object class="GtkStack" id="save_btn_content">
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">label</property>
+                        <property name="child">
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Save</property>
+                          </object>
+                        </property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkStackPage">
+                        <property name="name">spinner</property>
+                        <property name="child">
+                          <object class="AdwSpinner"/>
+                        </property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
                 <style>
                   <class name="suggested-action"/>
                 </style>
@@ -79,12 +113,14 @@
                           <object class="GtkBox">
                             <property name="spacing">6</property>
                             <child>
-                              <object class="GtkBox" id="cover_box">
+                              <object class="GtkButton" id="cover_btn">
                                 <property name="halign">start</property>
                                 <property name="valign">start</property>
                                 <property name="overflow">hidden</property>
+                                <property name="tooltip-text" translatable="true">Click to edit cover image</property>
                                 <style>
-                                  <class name="border-radius-12" />
+                                  <class name="padding-0"/>
+                                  <class name="flat"/>
                                 </style>
                                 <child>
                                   <object class="GtkImage" id="cover">
@@ -97,8 +133,10 @@
 
                             <child>
                               <object class="GtkBox">
+                                <style>
+                                  <class name="linked"/>
+                                </style>
                                 <property name="orientation">1</property>
-                                <property name="spacing">6</property>
                                 <property name="hexpand">true</property>
                                 <child>
                                   <object class="GtkEntry" id="title">
@@ -399,31 +437,5 @@
         </property>
       </object>
     </child>
-    <menu id="edit_menu_model">
-      <item>
-        <attribute name="label" translatable="true">Clear rating</attribute>
-        <attribute name="action">album-content-view.clear-rating</attribute>
-      </item>
-      <section>
-        <item>
-          <attribute name="label" translatable="true">Set album art</attribute>
-          <attribute name="action">album-content-view.set-album-art</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Clear album art</attribute>
-          <attribute name="action">album-content-view.clear-album-art</attribute>
-        </item>
-        <item>
-          <attribute name="label" translatable="true">Re-fetch metadata</attribute>
-          <attribute name="action">album-content-view.refetch-metadata</attribute>
-        </item>
-      </section>
-    </menu>
-    <menu id="queue_menu_model">
-      <item>
-        <attribute name="label" translatable="true">Queue all next</attribute>
-        <attribute name="action">album-content-view.insert-queue</attribute>
-      </item>
-    </menu>
   </template>
 </interface>
