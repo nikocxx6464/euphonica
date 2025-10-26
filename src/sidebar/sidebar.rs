@@ -237,8 +237,6 @@ impl Sidebar {
         );
 
         let dyn_playlists = library.dyn_playlists();
-        // FIXME: MOVE INTO DYN PLAYLISTS VIEW INSTEAD
-        library.init_dyn_playlists();
         let recent_dyn_playlists_model = gtk::SliceListModel::new(
             Some(gtk::SortListModel::new(
                 Some(dyn_playlists.clone()),

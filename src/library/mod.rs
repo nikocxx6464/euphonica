@@ -19,6 +19,7 @@ mod playlist_content_view;
 mod playlist_view;
 mod playlist_row;
 
+mod dynamic_playlist_view;
 mod dynamic_playlist_editor_view;
 mod dynamic_playlist_song_row;
 mod rule_button;
@@ -45,6 +46,7 @@ pub use artist_view::ArtistView;
 
 pub use folder_view::FolderView;
 
+pub use dynamic_playlist_view::DynamicPlaylistView;
 pub use dynamic_playlist_editor_view::DynamicPlaylistEditorView;
 pub use dynamic_playlist_song_row::DynamicPlaylistSongRow;
 

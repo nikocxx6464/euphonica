@@ -128,7 +128,7 @@
                             <property name="title" translatable="true">Dynamic Playlists</property>
                             <property name="name">dynamic_playlists</property>
                             <property name="child">
-                              <object class="EuphonicaDynamicPlaylistEditorView" id="dyn_playlist_view">
+                              <object class="EuphonicaDynamicPlaylistView" id="dyn_playlist_view">
 															</object>
                             </property>
                           </object>

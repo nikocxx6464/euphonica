@@ -21,14 +21,14 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientError, ClientState, ConnectionState},
-    common::{blend_mode::*, paintables::FadePaintable, Album, Artist},
+    common::{blend_mode::*, paintables::FadePaintable, Album, Artist, ThemeSelector},
     library::{
         AlbumView,
         ArtistContentView,
         ArtistView,
         FolderView,
-        DynamicPlaylistEditorView,
         PlaylistView,
+        DynamicPlaylistView,
         RecentView
     },
     player::{Player, PlayerBar, QueueView},
@@ -119,8 +119,6 @@ pub enum WindowMessage {
 // will not result in a rapidly-changing background - it will only change as quickly as it
 // can fade or the CPU can blur, whichever is slower.
 mod imp {
-    use crate::common::ThemeSelector;
-
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -144,7 +142,7 @@ mod imp {
         #[template_child]
         pub folder_view: TemplateChild<FolderView>,
         #[template_child]
-        pub dyn_playlist_view: TemplateChild<DynamicPlaylistEditorView>,
+        pub dyn_playlist_view: TemplateChild<DynamicPlaylistView>,
         #[template_child]
         pub playlist_view: TemplateChild<PlaylistView>,
         #[template_child]
@@ -157,7 +155,6 @@ mod imp {
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         // Sidebar
-        // TODO: Replace with Libadwaita spinner when v1.6 hits stable
         #[template_child]
         pub busy_spinner: TemplateChild<adw::Spinner>,
         #[template_child]

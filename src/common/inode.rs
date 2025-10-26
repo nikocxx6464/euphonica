@@ -12,6 +12,7 @@ pub enum INodeType {
     Song,
     Folder,
     Playlist,
+    DynamicPlaylist
 }
 
 impl INodeType {
@@ -19,7 +20,7 @@ impl INodeType {
         match self {
             Self::Folder => "folder-symbolic",
             Self::Song => "music-note-single-symbolic",
-            Self::Playlist => "playlist-symbolic",
+            Self::Playlist | Self::DynamicPlaylist => "playlist-symbolic",
             _ => "paper-symbolic",
         }
     }

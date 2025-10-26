@@ -293,6 +293,7 @@
 		<child schema="io.github.htkhiem.Euphonica.state.artistview" name="artistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.folderview" name="folderview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.playlistview" name="playlistview"/>
+		<child schema="io.github.htkhiem.Euphonica.state.dynplaylistview" name="dynplaylistview"/>
 		<child schema="io.github.htkhiem.Euphonica.state.queueview" name="queueview"/>
 
 		<!-- Remember last window size -->
@@ -359,6 +360,19 @@
 		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
 			<default>'asc'</default>
 			<summary>Playlist View sort direction</summary>
+		</key>
+	</schema>
+
+	<schema id="io.github.htkhiem.Euphonica.state.dynplaylistview" path="/io/github/htkhiem/Euphonica/state/dynplaylistview/">
+		<!-- Folder view state -->
+		<key name='sort-by' enum='io.github.htkhiem.Euphonica.sortby'>
+			<default>'filename'</default>
+			<summary>Dynamic Playlist View sort criterion</summary>
+		</key>
+
+		<key name="sort-direction" enum='io.github.htkhiem.Euphonica.sortdir'>
+			<default>'asc'</default>
+			<summary>Dynamic Playlist View sort direction</summary>
 		</key>
 	</schema>
 
