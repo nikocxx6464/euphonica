@@ -1,0 +1,112 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaDynamicPlaylistView" parent="GtkWidget">
+    <child>
+      <object class="AdwNavigationView" id="nav_view">
+        <child>
+          <object class="AdwNavigationPage">
+            <property name="tag">list</property>
+            <property name="title" translatable="true">Dynamic Playlists</property>
+            <child>
+              <object class="AdwToolbarView">
+                <child type="top">
+					        <object class="AdwHeaderBar">
+                    <property name="show-title" bind-source="EuphonicaDynamicPlaylistView" bind-property="collapsed" bind-flags="sync-create|invert-boolean"></property>
+                    <child type="start">
+                      <object class="GtkButton" id="show_sidebar">
+                        <property name="icon-name">dock-left-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Show sidebar</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkToggleButton" id="search_btn">
+                        <property name="icon-name">edit-find-symbolic</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkBox">
+                        <style>
+                          <class name="linked"/>
+                          <class name="flat"/>
+                        </style>
+                        <child>
+                          <object class="GtkButton" id="sort_dir_btn">
+                            <child>
+                              <object class="GtkImage" id="sort_dir">
+                                <property name="icon-name">view-sort-ascending-symbolic</property>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkDropDown" id="sort_mode">
+                            <property name="model">
+                              <object class="GtkStringList">
+                                <items>
+                                  <item translatable="yes">Playlist name</item>
+                                  <item translatable="yes">Last modified</item>
+                                </items>
+                              </object>
+                            </property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkButton" id="create_btn">
+                        <property name="icon-name">list-add-symbolic</property>
+                        <style>
+                          <class name="suggested-action"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child type="top">
+                  <object class="GtkSearchBar" id="search_bar">
+                    <property name="key-capture-widget">nav_view</property>
+                    <child>
+                      <object class="GtkSearchEntry" id="search_entry">
+                        <property name="search-delay">150</property>
+                        <property name="width-request">100</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+				        <property name="content">
+					        <object class="GtkScrolledWindow">
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="vscrollbar-policy">automatic</property>
+                    <property name="propagate-natural-height">true</property>
+                    <property name="has-frame">false</property>
+                    <property name="vexpand">true</property>
+                    <property name="child">
+                      <object class="GtkListView" id="list_view">
+                        <property name="show-separators">true</property>
+                        <property name="single-click-activate">true</property>
+                        <style>
+                          <class name="no-bg"/>
+                        </style>
+                      </object>
+                    </property>
+                  </object>
+				        </property>
+			        </object>
+            </child>
+          </object>
+        </child>
+        <!-- <child> -->
+        <!--   <object class="AdwNavigationPage" id="content_page"> -->
+        <!--     <property name="tag">content</property> -->
+        <!--     <property name="title" translatable="true">Dynamic Playlist Info</property> -->
+        <!--     <child> -->
+        <!--       <object class="EuphonicaDynamicPlaylistContentView" id="content_view"></object> -->
+        <!--     </child> -->
+        <!--   </object> -->
+        <!-- </child> -->
+      </object>
+    </child>
+  </template>
+</interface>
