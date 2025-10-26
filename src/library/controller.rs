@@ -1,9 +1,10 @@
 use crate::{
     cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers}, player::Player, utils::settings_manager
 };
-use glib::{closure_local, subclass::Signal};
+use glib::{closure_local, subclass::Signal, clone};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
+use derivative::Derivative;
 
 use adw::subclass::prelude::*;
 
@@ -17,9 +18,11 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Debug, Derivative)]
+    #[derivative(Default)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub recent_songs: gio::ListStore,
         // Album/Artist retrieval routine:
         // 1. Library places a background task to fetch albums.
@@ -30,19 +33,28 @@ mod imp {
         // 4.3. Send AlbumInfo class to main thread via AsyncClientMessage.
         // 4.4. Wrapper tells Library controller to create an Album GObject with that AlbumInfo &
         // append to the list store.
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub playlists: gio::ListStore,
         pub playlists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
+        pub dyn_playlists: gio::ListStore,
+        pub dyn_playlists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub albums: gio::ListStore,
         pub albums_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
         pub artists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
 
         // Folder view
         // Files and folders
         pub folder_history: RefCell<Vec<String>>,
         pub folder_curr_idx: Cell<u32>, // 0 means at root.
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub folder_inodes: gio::ListStore,
         pub folder_inodes_initialized: Cell<bool>,
 
@@ -56,25 +68,7 @@ mod imp {
         type Type = super::Library;
 
         fn new() -> Self {
-            Self {
-                recent_songs: gio::ListStore::new::<Song>(),
-                playlists: gio::ListStore::new::<INode>(),
-                playlists_initialized: Cell::new(false),
-                albums: gio::ListStore::new::<Album>(),
-                albums_initialized: Cell::new(false),
-                recent_albums: gio::ListStore::new::<Album>(),
-                artists: gio::ListStore::new::<Artist>(),
-                artists_initialized: Cell::new(false),
-                recent_artists: gio::ListStore::new::<Artist>(),
-                client: OnceCell::new(),
-                cache: OnceCell::new(),
-                player: OnceCell::new(),
-
-                folder_history: RefCell::new(Vec::new()),
-                folder_curr_idx: Cell::new(0),
-                folder_inodes: gio::ListStore::new::<INode>(),
-                folder_inodes_initialized: Cell::new(false),
-            }
+            Self::default()
         }
     }
 
@@ -480,7 +474,7 @@ impl Library {
         );
     }
 
-    /// Queue a playlist for playback.
+    /// Get all playlists
     pub fn init_playlists(&self) {
         if !self.imp().playlists_initialized.get() {
             self.imp().playlists.remove_all();
@@ -488,6 +482,38 @@ impl Library {
                 .playlists
                 .extend_from_slice(&self.client().get_playlists());
             self.imp().playlists_initialized.set(true);
+        }
+    }
+
+    /// Get all dynamic playlists
+    pub fn init_dyn_playlists(&self) {
+        if !self.imp().dyn_playlists_initialized.get() {
+            self.imp().dyn_playlists.remove_all();
+            glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    match gio::spawn_blocking(|| {
+                        sqlite::get_dynamic_playlists()
+                    }).await.unwrap() {
+                        Ok(inode_infos) => {
+                            println!("Received {} dynamic playlists", inode_infos.len());
+                            this.imp()
+                                .dyn_playlists
+                                .extend_from_slice(
+                                    &inode_infos
+                                    .into_iter()
+                                    .map(INode::from)
+                                    .collect::<Vec<INode>>()
+                                );
+                            this.imp().dyn_playlists_initialized.set(true);
+                        }
+                        Err(e) => {
+                            dbg!(e);
+                        }
+                    }
+                }
+            ));
         }
     }
 
@@ -504,6 +530,11 @@ impl Library {
     /// Get a reference to the local playlists store
     pub fn playlists(&self) -> gio::ListStore {
         self.imp().playlists.clone()
+    }
+
+    /// Get a reference to the local dynamic playlists store
+    pub fn dyn_playlists(&self) -> gio::ListStore {
+        self.imp().dyn_playlists.clone()
     }
 
     /// Get a reference to the local albums store

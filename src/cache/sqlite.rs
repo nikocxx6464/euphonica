@@ -11,9 +11,9 @@ use time::OffsetDateTime;
 use glib::{ThreadPool, ThreadHandle};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, DynamicPlaylist, SongInfo},
+    common::{inode::INodeInfo, AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType, SongInfo},
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
-    utils::strip_filename_linux,
+    utils::{format_datetime_local_tz, strip_filename_linux},
 };
 
 use super::controller::get_doc_cache_path;
@@ -750,6 +750,28 @@ pub fn clear_history() -> Result<(), Error> {
     tx.execute("delete from artists_history", []).map_err(|e| Error::DbError(e))?;
     tx.commit().map_err(|e| Error::DbError(e))?;
     Ok(())
+}
+
+/// Get basic information of each of the dynamic playlists. This returns INodeInfos as
+/// lightweight "previews" of full DynamicPlaylist objects.
+pub fn get_dynamic_playlists() -> Result<Vec<INodeInfo>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select name, last_modified from queries")
+        .unwrap();
+    Ok(
+        query
+            .query_map([], |r| {
+                Ok(INodeInfo {
+                    uri: r.get::<usize, String>(0)?,
+                    last_modified: Some(format_datetime_local_tz(r.get::<usize, OffsetDateTime>(1)?)),
+                    inode_type: INodeType::Playlist
+                })
+            })
+            .map_err(|e| Error::DbError(e))?
+            .map(|r| r.unwrap())
+            .collect::<Vec<INodeInfo>>()
+    )
 }
 
 pub fn exists_dynamic_playlist(name: &str) -> Result<bool, Error> {

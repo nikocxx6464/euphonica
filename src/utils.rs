@@ -3,14 +3,18 @@ use aho_corasick::AhoCorasick;
 use gio::prelude::*;
 use gtk::gio;
 use gtk::Ordering;
-use image::{imageops::FilterType, ImageReader, DynamicImage, RgbImage};
+use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
+use time::OffsetDateTime;
+use time::UtcOffset;
+use time::format_description::{parse_owned, OwnedFormatItem};
+use time::error::IndeterminateOffset;
 use std::sync::OnceLock;
 use std::fmt::Write;
 use std::time::SystemTime;
 use std::time::UNIX_EPOCH;
-use std::{io::Cursor, sync::RwLock};
+use std::sync::RwLock;
 use tokio::runtime::Runtime;
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
@@ -209,6 +213,53 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
 
 pub fn current_unix_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+}
+
+pub static LOCAL_TZ_OFFSET: OnceLock<Result<UtcOffset, IndeterminateOffset>> = OnceLock::new();
+
+/// Safely retrieve the initialized local UTC offset, computing it if necessary.
+/// Returns the UtcOffset or the error encountered during system lookup.
+fn get_local_tz_offset() -> Result<UtcOffset, IndeterminateOffset> {
+    *LOCAL_TZ_OFFSET.get_or_init(|| {
+        UtcOffset::current_local_offset()
+    })
+}
+
+/// Static storage for the determined locale format string.
+static LOCALE_FORMAT: OnceLock<OwnedFormatItem> = OnceLock::new();
+
+/// Determine the time format string based on the system's locale environment variables.
+/// A normal user wouldn't be juggling locales while using their computer so doing this
+/// once at startup suffices. For now assume Linux.
+///
+/// Note: This uses a simple heuristic to switch between common US and European formats.
+/// A fully robust solution would require a dedicated i18n crate.
+fn get_locale_format() -> &'static OwnedFormatItem {
+    LOCALE_FORMAT.get_or_init(|| {
+        // Check LC_TIME first, then LANG, then fall back to the default ISO-style format.
+        let locale_str = std::env::var("LC_TIME")
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_default()
+            .to_lowercase();
+
+        if locale_str.contains("us") || locale_str.contains("ca") {
+            // Example for North America: MM/DD/YYYY HH:MM:SS
+            parse_owned::<2>("[month padding:none]/[day padding:none]/[year] [hour]:[minute]:[second]").unwrap()
+        } else if locale_str.contains("gb") || locale_str.contains("de") || locale_str.contains("fr") || locale_str.contains("au") {
+            // Example for Europe/UK/Australia: DD/MM/YYYY HH:MM:SS
+            parse_owned::<2>("[day padding:none]/[month padding:none]/[year] [hour]:[minute]:[second]").unwrap()
+
+        } else {
+            // Default
+            parse_owned::<2>("[year]-[month]-[day] [hour]:[minute]:[second]").unwrap()
+        }
+    })
+}
+
+pub fn format_datetime_local_tz(utc_dt: OffsetDateTime) -> String {
+    let local_dt = get_local_tz_offset().map_or(utc_dt, |offset| utc_dt.to_offset(offset));
+
+    local_dt.format(get_locale_format()).unwrap()
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is

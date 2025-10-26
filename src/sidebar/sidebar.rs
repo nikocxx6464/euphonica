@@ -93,8 +93,12 @@ impl Sidebar {
     pub fn hide_highlights(&self) {
         let settings = utils::settings_manager().child("ui");
         let recent_playlists_widget = self.imp().recent_playlists.get();
+        let recent_dyn_playlists_widget = self.imp().recent_dyn_playlists.get();
         for idx in 0..settings.uint("recent-playlists-count") {
             if let Some(row) = recent_playlists_widget.row_at_index(idx as i32) {
+                row.set_activatable(false);
+            }
+            if let Some(row) = recent_dyn_playlists_widget.row_at_index(idx as i32) {
                 row.set_activatable(false);
             }
         }
@@ -232,8 +236,78 @@ impl Sidebar {
             ),
         );
 
+        let dyn_playlists = library.dyn_playlists();
+        // FIXME: MOVE INTO DYN PLAYLISTS VIEW INSTEAD
+        library.init_dyn_playlists();
+        let recent_dyn_playlists_model = gtk::SliceListModel::new(
+            Some(gtk::SortListModel::new(
+                Some(dyn_playlists.clone()),
+                Some(
+                    gtk::StringSorter::builder()
+                        .expression(gtk::PropertyExpression::new(
+                            INode::static_type(),
+                            Option::<gtk::PropertyExpression>::None,
+                            "last-modified",
+                        ))
+                        .build(),
+                ),
+            )),
+            0,
+            5, // placeholder, will be bound to a GSettings key later
+        );
+        settings
+            .bind("recent-playlists-count", &recent_dyn_playlists_model, "size")
+            .build();
+
+        let recent_dyn_playlists_widget = self.imp().recent_dyn_playlists.get();
+        recent_dyn_playlists_widget.bind_model(
+            Some(&recent_dyn_playlists_model),
+            clone!(
+                #[weak]
+                stack,
+                #[weak]
+                playlist_view,
+                #[weak]
+                split_view,
+                #[weak]
+                recent_btn,
+                #[upgrade_or]
+                SidebarButton::new("ERROR", "dot-symbolic").upcast::<gtk::Widget>(),
+                move |obj| {
+                    let playlist = obj.downcast_ref::<INode>().unwrap();
+                    let btn = SidebarButton::new(playlist.get_uri(), "dot-symbolic");
+                    btn.set_group(Some(&recent_btn));
+                    // btn.connect_toggled(clone!(
+                    //     #[weak]
+                    //     stack,
+                    //     #[weak]
+                    //     playlist_view,
+                    //     #[weak]
+                    //     split_view,
+                    //     #[weak]
+                    //     playlist,
+                    //     move |btn| {
+                    //         if btn.is_active() {
+                    //             playlist_view.on_playlist_clicked(&playlist);
+                    //             if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                    //                 stack.set_visible_child_name("playlists");
+                    //             }
+                    //             split_view.set_show_sidebar(!split_view.is_collapsed());
+                    //         }
+                    //     }
+                    // ));
+                    btn.into()
+                }
+            ),
+        );
+
         self.hide_highlights();
         playlists.connect_items_changed(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _, _| {this.hide_highlights();}
+        ));
+        dyn_playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, _, _, _| {this.hide_highlights();}
@@ -243,6 +317,11 @@ impl Sidebar {
         // an unnecessary ~6px space after the Saved Playlists button
         recent_playlists_model
             .bind_property("n-items", &recent_playlists_widget, "visible")
+            .transform_to(|_, len: u32| Some(len > 0))
+            .sync_create()
+            .build();
+        recent_dyn_playlists_model
+            .bind_property("n-items", &recent_dyn_playlists_widget, "visible")
             .transform_to(|_, len: u32| Some(len > 0))
             .sync_create()
             .build();
