@@ -1,0 +1,134 @@
+# This workflow builds the Euphonica app from source as a .deb package.
+# It installs build dependencies, compiles the app, and packages it.
+
+name: Build .deb Package
+
+on:
+  push:
+    branches: [ "main" ] # Or whichever your default branch is
+  workflow_dispatch: # Allows you to run this workflow manually
+
+jobs:
+  build-deb:
+    name: Build Euphonica .deb (Cross-Compile ARM64)
+    runs-on: ubuntu-latest # Use a standard, fast x86_64 runner
+
+    steps:
+      - name: 1. Check out repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'htkhiem/euphonica'
+          submodules: 'recursive' # Important for GNOME apps
+
+      - name: 2. Setup QEMU and ARM64 Architecture
+        run: |
+          # Set up QEMU for ARM emulation
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          # Add the arm64 architecture so we can install arm64 libraries
+          sudo dpkg --add-architecture arm64
+          sudo apt-get update -y
+
+      - name: 3. Install Build Dependencies (Host and Target)
+        run: |
+          # Install HOST (x86_64) tools needed to run the build
+          sudo apt-get install -y \
+            git \
+            meson \
+            ninja-build \
+            pkg-config \
+            blueprint-compiler \
+            python3-mutagen \
+            yt-dlp \
+            dpkg-dev \
+            fakeroot \
+            crossbuild-essential-arm64 \
+            pkg-config-aarch64-linux-gnu
+
+          # Install TARGET (arm64) libraries for cross-compilation
+          sudo apt-get install -y \
+            libadwaita-1-dev:arm64 \
+            libportal-gtk4-dev:arm64 \
+            libsecret-1-dev:arm64 \
+            libsoup-3.0-dev:arm64 \
+            libappstream-dev:arm64 \
+            libgtk-4-dev:arm64 \
+            libavcodec-dev:arm64 \
+            libavformat-dev:arm64 \
+            libavutil-dev:arm64 \
+            libswresample-dev:arm64 \
+            libswscale-dev:arm64
+
+      - name: 4. Create Meson Cross-Compilation File
+        run: |
+          cat <<EOF > cross_file.ini
+          [binaries]
+          c = 'aarch64-linux-gnu-gcc'
+          cpp = 'aarch64-linux-gnu-g++'
+          ar = 'aarch64-linux-gnu-ar'
+          strip = 'aarch64-linux-gnu-strip'
+          pkgconfig = 'aarch64-linux-gnu-pkg-config'
+
+          [host_machine]
+          system = 'linux'
+          cpu_family = 'aarch64'
+          cpu = 'aarch64'
+          endian = 'little'
+          EOF
+
+      - name: 5. Configure Meson Build (Cross-Compiling)
+        run: |
+          # Configure the build with the prefix and the new cross-file
+          meson setup build --prefix=/usr --cross-file=cross_file.ini
+
+      - name: 6. Compile Application
+        run: |
+          meson compile -C build
+
+      - name: 7. Install to Staging Directory
+        run: |
+          # Use fakeroot to simulate a root install into a staging directory
+          mkdir -p staging
+          fakeroot meson install -C build --destdir=staging
+
+      - name: 8. Create .deb Package Metadata
+        id: package_info
+        run: |
+          # Create the DEBIAN control directory
+          mkdir -p staging/DEBIAN
+          
+          # Generate a dynamic version number
+          VERSION="0.1.0-$(date +%Y%m%d)-${{ github.run_number }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Get description from metainfo file
+          SUMMARY=$(grep -oP '(?<=<summary>).*(?=</summary>)' data/dev.alextu.euphonica.metainfo.xml.in.in | head -n 1)
+          
+          # Create the control file with all runtime dependencies
+          cat <<EOF > staging/DEBIAN/control
+          Package: euphonica
+          Version: $VERSION
+          Architecture: arm64
+          Maintainer: GitHub Actions <actions@github.com>
+          Description: $SUMMARY
+           Euphonica is a user-friendly application designed for streaming audio and
+           video content from YouTube, with the added capability of downloading
+           media for offline access.
+          Depends: libadwaita-1-0, libportal-gtk4-1, libsecret-1-0, libsoup-3.0-0, libgtk-4-1, python3-mutagen, yt-dlp, ffmpeg
+          EOF
+
+      - name: 9. Build .deb Package
+        run: |
+          # Use fakeroot to build the .deb package
+          fakeroot dpkg-deb --build staging
+          
+          # Rename the package to include version and architecture
+          mkdir -p artifacts
+          mv staging.deb "artifacts/euphonica_${{ steps.package_info.outputs.version }}_arm64.deb"
+
+      - name: 10. Upload .deb Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: euphonica-deb
+          path: artifacts/euphonica_*.deb
+
+
