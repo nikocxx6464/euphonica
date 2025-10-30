@@ -1,0 +1,105 @@
+# This workflow builds the Euphonica app from source as a .deb package.
+# It installs build dependencies, compiles the app, and packages it.
+
+name: Build .deb Package
+
+on:
+  push:
+    branches: [ "main" ] # Or whichever your default branch is
+  workflow_dispatch: # Allows you to run this workflow manually
+
+jobs:
+  build-deb:
+    name: Build Euphonica .deb
+    runs-on: ubuntu-latest-arm64 # Run on a native ARM64 runner
+
+    steps:
+      - name: 1. Check out repository
+        uses: actions/checkout@v4
+        with:
+          repository: 'htkhiem/euphonica'
+          submodules: 'recursive' # Important for GNOME apps
+
+      - name: 2. Install Build Dependencies
+        run: |
+          sudo apt-get update
+          # Install all build-time headers, tools, and packaging utilities
+          # These are derived from the app's Flatpak manifest
+          sudo apt-get install -y \
+            git \
+            meson \
+            ninja-build \
+            pkg-config \
+            blueprint-compiler \
+            libadwaita-1-dev \
+            libportal-gtk4-dev \
+            libsecret-1-dev \
+            libsoup-3.0-dev \
+            libappstream-dev \
+            libgtk-4-dev \
+            python3-mutagen \
+            yt-dlp \
+            libavcodec-dev \
+            libavformat-dev \
+            libavutil-dev \
+            libswresample-dev \
+            libswscale-dev \
+            dpkg-dev \
+            fakeroot
+
+      - name: 3. Configure Meson Build
+        run: |
+          # Configure the build with the prefix set to /usr for standard Linux install
+          meson setup build --prefix=/usr
+
+      - name: 4. Compile Application
+        run: |
+          meson compile -C build
+
+      - name: 5. Install to Staging Directory
+        run: |
+          # Use fakeroot to simulate a root install into a staging directory
+          mkdir -p staging
+          fakeroot meson install -C build --destdir=staging
+
+      - name: 6. Create .deb Package Metadata
+        id: package_info
+        run: |
+          # Create the DEBIAN control directory
+          mkdir -p staging/DEBIAN
+          
+          # Generate a dynamic version number
+          VERSION="0.1.0-$(date +%Y%m%d)-${{ github.run_number }}"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+          # Get description from metainfo file
+          SUMMARY=$(grep -oP '(?<=<summary>).*(?=</summary>)' data/dev.alextu.euphonica.metainfo.xml.in.in | head -n 1)
+          
+          # Create the control file with all runtime dependencies
+          cat <<EOF > staging/DEBIAN/control
+          Package: euphonica
+          Version: $VERSION
+          Architecture: arm64
+          Maintainer: GitHub Actions <actions@github.com>
+          Description: $SUMMARY
+           Euphonica is a user-friendly application designed for streaming audio and
+           video content from YouTube, with the added capability of downloading
+           media for offline access.
+          Depends: libadwaita-1-0, libportal-gtk4-1, libsecret-1-0, libsoup-3.0-0, libgtk-4-1, python3-mutagen, yt-dlp, ffmpeg
+          EOF
+
+      - name: 7. Build .deb Package
+        run: |
+          # Use fakeroot to build the .deb package
+          fakeroot dpkg-deb --build staging
+          
+          # Rename the package to include version and architecture
+          mkdir -p artifacts
+          mv staging.deb "artifacts/euphonica_${{ steps.package_info.outputs.version }}_arm64.deb"
+
+      - name: 8. Upload .deb Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: euphonica-deb
+          path: artifacts/euphonica_*.deb
+
