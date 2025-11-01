@@ -14,20 +14,19 @@ use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
     cache::{
-        placeholders::{ALBUMART_PLACEHOLDER}, sqlite, Cache, CacheState, ImageAction
+        placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache, CacheState, ImageAction
     },
     client::ClientState,
     common::{
         dynamic_playlist::{AutoRefresh, Ordering, Rule},
-        DynamicPlaylist, Song
+        DynamicPlaylist, Song, SongRow
     },
     utils::{format_secs_as_duration, tokio_runtime},
     window::EuphonicaWindow
 };
 
 use super::{
-    ordering_button::OrderingButton, rule_button::RuleButton, Library,
-    DynamicPlaylistSongRow
+    ordering_button::OrderingButton, rule_button::RuleButton, Library
 };
 
 mod imp {
@@ -418,7 +417,7 @@ impl DynamicPlaylistEditorView {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
-           .set(cache)
+           .set(cache.clone())
            .expect("DynamicPlaylistEditorView cannot bind to cache");
         self.imp()
            .window
@@ -547,51 +546,75 @@ impl DynamicPlaylistEditorView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `AlbumSongRow` during setup
         factory.connect_setup(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = DynamicPlaylistSongRow::new(
-                    this.get_library().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
-                    item,
-                    this.get_cache().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
-                );
+                let row = SongRow::new(Some(cache));
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                // No end-widget for this view
                 item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `AlbumSongRow` to one of our Album GObjects
+        // Tell factory how to bind `SongRow` to one of our Album GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
             let item = list_item
                 .downcast_ref::<ListItem>()
-                .expect("Needs to be ListItem");
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Song>()
+                .expect("The item has to be a common::Song.");
 
-            // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: DynamicPlaylistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<DynamicPlaylistSongRow>()
-                .expect("The child has to be an `DynamicPlaylistSongRow`.");
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
 
             // Within this binding fn is where the cached album art texture gets used.
-            child.bind(item);
+            child.on_bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
-            // Get `DynamicPlaylistSongRow` from `ListItem` (the UI widget)
-            let child: DynamicPlaylistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<DynamicPlaylistSongRow>()
-                .expect("The child has to be an `DynamicPlaylistSongRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
+            child.on_unbind();
         });
 
         // Set the factory of the list view

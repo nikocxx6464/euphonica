@@ -697,7 +697,7 @@ impl AlbumContentView {
                 .and_downcast::<Song>()
                 .expect("The item has to be a common::Song.");
 
-            // Get `AlbumSongRow` from `ListItem` (the UI widget)
+            // Get `SongRow` from `ListItem` (the UI widget)
             let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
@@ -706,7 +706,6 @@ impl AlbumContentView {
                 .expect("The child has to be an `SongRow`.");
 
             child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
-            child.on_bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -719,7 +718,6 @@ impl AlbumContentView {
                 .and_downcast::<SongRow>()
                 .expect("The child has to be an `SongRow`.");
             child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
-            child.on_unbind();
         });
 
         // Set the factory of the list view

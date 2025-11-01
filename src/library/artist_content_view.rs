@@ -8,11 +8,11 @@ use std::{
 };
 use derivative::Derivative;
 
-use super::{AlbumCell, ArtistSongRow, Library};
+use super::{AlbumCell, Library};
 use crate::{
     cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, Song}, utils::settings_manager,
+    common::{Album, Artist, RowAddButtons, Song, SongRow}, utils::{format_secs_as_duration, settings_manager},
 };
 
 mod imp {
@@ -526,7 +526,7 @@ impl ArtistContentView {
         let library = self.imp().library.get().unwrap();
         let cache = self.imp().cache.get().unwrap();
         let factory = SignalListItemFactory::new();
-        // Create an empty `ArtistSongRow` during setup
+
         factory.connect_setup(clone!(
             #[weak]
             library,
@@ -536,11 +536,33 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let song_row = ArtistSongRow::new(library, item, cache);
-                item.set_child(Some(&song_row));
+                let row = SongRow::new(Some(cache));
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowAddButtons::new(&library);
+                row.set_end_widget(Some(&end_widget.into()));
+                item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `ArtistSongRow` to one of our Artist GObjects
+        // Tell factory how to bind `SongRow` to one of our Artist GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
             let item: Song = list_item
@@ -550,28 +572,29 @@ impl ArtistContentView {
                 .and_downcast::<Song>()
                 .expect("The item has to be a common::Song.");
 
-            // Get `ArtistSongRow` from `ListItem` (the UI widget)
-            let child: ArtistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<ArtistSongRow>()
-                .expect("The child has to be an `ArtistSongRow`.");
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
 
-            // Within this binding fn is where the cached artist avatar texture gets used.
-            child.bind(&item);
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child.on_bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
-            // Get `ArtistSongRow` from `ListItem` (the UI widget)
-            let child: ArtistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<ArtistSongRow>()
-                .expect("The child has to be an `ArtistSongRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child.on_unbind();
         });
 
         // Set the factory of the list view

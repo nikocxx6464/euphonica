@@ -109,38 +109,7 @@
         </property>
         <property name="end-widget">
           <object class="GtkBox">
-            <child>
-              <object class="GtkBox">
-                <style>
-                  <class name="linked"/>
-                </style>
-                <child>
-                  <object class="GtkButton" id="raise">
-                    <style>
-                      <class name="flat"/>
-                    </style>
-                    <property name="icon-name">up-symbolic</property>
-                  </object>
-                </child>
-                <child>
-                  <object class="GtkButton" id="lower">
-                    <style>
-                      <class name="flat"/>
-                    </style>
-                    <property name="icon-name">down-symbolic</property>
-                  </object>
-                </child>
-              </object>
-            </child>
-            <child>
-              <object class="GtkButton" id="remove">
-                <style>
-                  <class name="flat"/>
-                </style>
-                <property name="icon-name">list-remove-symbolic</property>
-                <property name="tooltip-text" translatable="true">Remove this track from the playlist</property>
-              </object>
-            </child>
+
             <child>
               <object class="GtkButton" id="replace_queue">
                 <property name="tooltip-text" translatable="true">Replace queue with this song</property>

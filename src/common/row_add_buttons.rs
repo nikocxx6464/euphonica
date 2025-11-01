@@ -7,7 +7,6 @@ use crate::{
     common::Song, library::Library
 };
 
-// Wrapper around the common row object to implement song thumbnail fetch logic.
 mod imp {
     use super::*;
 
@@ -48,7 +47,6 @@ mod imp {
     impl BoxImpl for RowAddButtons {}
 }
 
-// Common row widget for displaying a single song, used across the UI.
 glib::wrapper! {
     pub struct RowAddButtons(ObjectSubclass<imp::RowAddButtons>)
     @extends gtk::Box, gtk::Widget,

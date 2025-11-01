@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaRowEditButtons" parent="GtkBox">
+    <child>
+      <object class="GtkBox">
+        <style>
+          <class name="linked"/>
+        </style>
+        <child>
+          <object class="GtkButton" id="raise">
+            <style>
+              <class name="flat"/>
+            </style>
+            <property name="icon-name">up-symbolic</property>
+            <property name="tooltip-text" translatable="true">Raise (move backward)</property>
+          </object>
+        </child>
+        <child>
+          <object class="GtkButton" id="lower">
+            <style>
+              <class name="flat"/>
+            </style>
+            <property name="icon-name">down-symbolic</property>
+            <property name="tooltip-text" translatable="true">Lower (move forward)</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="remove">
+        <style>
+          <class name="flat"/>
+        </style>
+        <property name="icon-name">list-remove-symbolic</property>
+        <property name="tooltip-text" translatable="true">Remove</property>
+      </object>
+    </child>
+  </template>
+</interface>
