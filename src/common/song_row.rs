@@ -30,6 +30,8 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/song-row.ui")]
     pub struct SongRow {
         #[template_child]
+        pub index: TemplateChild<gtk::Label>,
+        #[template_child]
         pub quality_grade: TemplateChild<gtk::Image>,
         #[template_child]
         pub center_box: TemplateChild<gtk::CenterBox>,
@@ -77,6 +79,8 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
+                    ParamSpecBoolean::builder("index-visible").build(),
+                    ParamSpecString::builder("index").build(),
                     ParamSpecBoolean::builder("thumbnail-visible").build(),
                     ParamSpecString::builder("name").build(),
                     ParamSpecString::builder("quality-grade").build(),
@@ -94,6 +98,8 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
+                "index-visible" => self.thumbnail.is_visible().to_value(),
+                "index" => self.index.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
                 "name" => self.name.label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
@@ -111,6 +117,16 @@ mod imp {
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
             let obj = self.obj();
             match pspec.name() {
+                "index-visible" => {
+                    if let Ok(vis) = value.get::<bool>() {
+                        self.index.set_visible(vis);
+                    }
+                }
+                "index" => {
+                    if let Ok(idx) = value.get::<&str>() {
+                        self.index.set_label(idx);
+                    }
+                }
                 "thumbnail-visible" => {
                     if let Ok(vis) = value.get::<bool>() {
                         self.thumbnail.set_visible(vis);
@@ -152,8 +168,8 @@ mod imp {
         }
 
         fn dispose(&self) {
-            if let Some((set_id, clear_id)) = self.thumbnail_signal_ids.take() {
-                let cache_state = self.cache.get().unwrap().get_cache_state();
+            if let (Some(cache), Some((set_id, clear_id))) = (self.cache.get(), self.thumbnail_signal_ids.take()) {
+                let cache_state = cache.get_cache_state();
                 cache_state.disconnect(set_id);
                 cache_state.disconnect(clear_id);
             }
@@ -176,67 +192,70 @@ glib::wrapper! {
 
 impl SongRow {
     pub fn new(
-        cache: Rc<Cache>,
+        // If not given, will not set up thumbnail fetching
+        cache: Option<Rc<Cache>>,
         // set_thumbnail_signal: &str,
         // clear_thumbnail_signal: &str
     ) -> Self {
         let res: Self = Object::builder().build();
-        let cache_state = cache.get_cache_state();
-        let _ = res.imp().cache.set(cache);
-        let _ = res.imp().thumbnail_signal_ids.replace(Some((
-            cache_state.connect_closure(
-                // set_thumbnail_signal,
-                "album-art-downloaded",
-                false,
-                closure_local!(
-                    #[weak]
-                    res,
-                    move |_: CacheState, uri: &str, thumb: bool, tex: &gdk::Texture| {
-                        if !thumb {
-                            return;
-                        }
-                        // Match song URI first then folder URI. Only try to match by folder URI
-                        // if we don't have a current thumbnail.
-                        if let Some(song) = res.imp().song.borrow().as_ref() {
-                            if uri == song.get_uri() {
-                                // Force update since we might have been using a folder cover
-                                // temporarily
-                                res.update_thumbnail(tex, CoverSource::Embedded);
-                            } else if res.imp().thumbnail_source.get() != CoverSource::Embedded
-                                && strip_filename_linux(song.get_uri()) == uri {
-                                    res.update_thumbnail(tex, CoverSource::Folder);
-                                }
-                        }
-                    }
-                ),
-            ),
-            cache_state.connect_closure(
-                // clear_thumbnail_signal,
-                "album-art-cleared",
-                false,
-                closure_local!(
-                    #[weak]
-                    res,
-                    move |_: CacheState, uri: &str| {
-                        if let Some(song) = res.imp().song.borrow().as_ref() {
-                            match res.imp().thumbnail_source.get() {
-                                CoverSource::Folder => {
-                                    if strip_filename_linux(song.get_uri()) == uri {
-                                        res.clear_thumbnail();
+        if let Some(cache) = cache {
+            let cache_state = cache.get_cache_state();
+            let _ = res.imp().cache.set(cache);
+            let _ = res.imp().thumbnail_signal_ids.replace(Some((
+                cache_state.connect_closure(
+                    // set_thumbnail_signal,
+                    "album-art-downloaded",
+                    false,
+                    closure_local!(
+                        #[weak]
+                        res,
+                        move |_: CacheState, uri: &str, thumb: bool, tex: &gdk::Texture| {
+                            if !thumb {
+                                return;
+                            }
+                            // Match song URI first then folder URI. Only try to match by folder URI
+                            // if we don't have a current thumbnail.
+                            if let Some(song) = res.imp().song.borrow().as_ref() {
+                                if uri == song.get_uri() {
+                                    // Force update since we might have been using a folder cover
+                                    // temporarily
+                                    res.update_thumbnail(tex, CoverSource::Embedded);
+                                } else if res.imp().thumbnail_source.get() != CoverSource::Embedded
+                                    && strip_filename_linux(song.get_uri()) == uri {
+                                        res.update_thumbnail(tex, CoverSource::Folder);
                                     }
-                                }
-                                CoverSource::Embedded => {
-                                    if song.get_uri() == uri {
-                                        res.clear_thumbnail();
-                                    }
-                                }
-                                _ => {}
                             }
                         }
-                    }
+                    ),
                 ),
-            ),
-        )));
+                cache_state.connect_closure(
+                    // clear_thumbnail_signal,
+                    "album-art-cleared",
+                    false,
+                    closure_local!(
+                        #[weak]
+                        res,
+                        move |_: CacheState, uri: &str| {
+                            if let Some(song) = res.imp().song.borrow().as_ref() {
+                                match res.imp().thumbnail_source.get() {
+                                    CoverSource::Folder => {
+                                        if strip_filename_linux(song.get_uri()) == uri {
+                                            res.clear_thumbnail();
+                                        }
+                                    }
+                                    CoverSource::Embedded => {
+                                        if song.get_uri() == uri {
+                                            res.clear_thumbnail();
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                    ),
+                ),
+            )));
+        }
 
         res
     }
@@ -247,20 +266,19 @@ impl SongRow {
     }
 
     fn schedule_thumbnail(&self, info: &SongInfo) {
-        self.imp().thumbnail_source.set(CoverSource::Unknown);
-        self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        if let Some((tex, is_embedded)) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_embedded_cover(info, true, true) {
-                self.imp().thumbnail.set_paintable(Some(&tex));
-                self.imp().thumbnail_source.set(
-                    if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
-                );
-            }
+        if let Some(cache) = self.imp().cache.get() {
+            self.imp().thumbnail_source.set(CoverSource::Unknown);
+            self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
+            if let Some((tex, is_embedded)) = cache
+                .clone()
+                .load_cached_embedded_cover(info, true, true) {
+                    self.imp().thumbnail.set_paintable(Some(&tex));
+                    self.imp().thumbnail_source.set(
+                        if is_embedded {CoverSource::Embedded} else {CoverSource::Folder}
+                    );
+                }
+        }
+
     }
 
     fn update_thumbnail(&self, tex: &gdk::Texture, src: CoverSource) {
@@ -277,6 +295,14 @@ impl SongRow {
         if let Some(_) = self.imp().song.take() {
             self.clear_thumbnail();
         }
+    }
+
+    pub fn set_index_visible(&self, vis: bool) {
+        self.imp().index.set_visible(vis);
+    }
+
+    pub fn set_index(&self, val: &str) {
+        self.imp().index.set_label(val);
     }
 
     pub fn set_name(&self, name: &str) {
@@ -325,5 +351,9 @@ impl SongRow {
 
     pub fn set_end_widget(&self, widget: Option<&gtk::Widget>) {
         self.imp().center_box.set_end_widget(widget);
+    }
+
+    pub fn end_widget(&self) -> Option<gtk::Widget> {
+        self.imp().center_box.end_widget()
     }
 }

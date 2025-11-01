@@ -463,7 +463,7 @@ impl RecentView {
             Some(&song_list),
             move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(cache.clone());
+                let row = SongRow::new(Some(cache.clone()));
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());

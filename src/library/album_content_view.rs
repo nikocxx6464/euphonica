@@ -8,11 +8,11 @@ use std::{
 };
 use time::{format_description, Date};
 use derivative::Derivative;
-use super::{artist_tag::ArtistTag, AlbumSongRow, Library};
+use super::{artist_tag::ArtistTag, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
     client::{state::StickersSupportLevel, ClientState},
-    common::{Album, AlbumInfo, Artist, CoverSource, Rating, Song},
+    common::{Album, AlbumInfo, Artist, CoverSource, Rating, RowAddButtons, Song, SongRow},
     utils::format_secs_as_duration, window::EuphonicaWindow,
 };
 
@@ -416,7 +416,7 @@ impl AlbumContentView {
         self.imp()
             .add_to_playlist
             .setup(library.clone(), self.imp().sel_model.clone());
-        self.imp().library.set(library).expect("Could not register album content view with library controller");
+        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
         cache_state.connect_closure(
             "album-art-downloaded",
             false,
@@ -644,20 +644,46 @@ impl AlbumContentView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `AlbumSongRow` during setup
+        // For now don't show album arts as most of the time songs in the same
+        // album will have the same embedded art anyway.
         factory.connect_setup(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            library,
             #[upgrade_or]
             (),
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = AlbumSongRow::new(
-                    this.get_library().expect("Error: album content view not connected to library").clone(),
-                    item
-                );
+                let row = SongRow::new(None);
+                row.set_index_visible(true);
+                row.set_thumbnail_visible(false);
+                item.property_expression("item")
+                    .chain_property::<Song>("track")
+                    .bind(&row, "index", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowAddButtons::new(&library);
+                row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
             }
         ));
@@ -672,27 +698,28 @@ impl AlbumContentView {
                 .expect("The item has to be a common::Song.");
 
             // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: AlbumSongRow = list_item
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<AlbumSongRow>()
-                .expect("The child has to be an `AlbumSongRow`.");
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
 
-            // Within this binding fn is where the cached album art texture gets used.
-            child.bind(&item);
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child.on_bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
             // Get `AlbumSongRow` from `ListItem` (the UI widget)
-            let child: AlbumSongRow = list_item
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<AlbumSongRow>()
-                .expect("The child has to be an `AlbumSongRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child.on_unbind();
         });
 
         // Set the factory of the list view
