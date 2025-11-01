@@ -41,13 +41,13 @@ impl MetadataProvider for MusicBrainzWrapper {
                     if let Some(old) = existing {
                         return Some(old.merge(new));
                     }
-                    return Some(new);
+                    Some(new)
                 } else {
                     println!(
                         "[MusicBrainz] Could not fetch album metadata: {:?}",
                         res.err()
                     );
-                    return existing;
+                    existing
                 }
             }
             // Else there must be an artist tag before we can search reliably
@@ -90,7 +90,7 @@ impl MetadataProvider for MusicBrainzWrapper {
                 return existing;
             }
         } else {
-            return existing;
+            existing
         }
     }
 
@@ -105,7 +105,7 @@ impl MetadataProvider for MusicBrainzWrapper {
     ) -> Option<models::ArtistMeta> {
         if meta_provider_settings(PROVIDER_KEY).boolean("enabled") {
             if let Some(mbid) = key.mbid.as_ref() {
-                println!("[MusicBrainz] Fetching artist by MBID: {}", mbid);
+                println!("[MusicBrainz] Fetching artist by MBID: {mbid}");
                 let res = Artist::fetch()
                     .id(mbid)
                     .with_url_relations()
@@ -117,13 +117,13 @@ impl MetadataProvider for MusicBrainzWrapper {
                     if let Some(old) = existing {
                         return Some(old.merge(new));
                     }
-                    return Some(new);
+                    Some(new)
                 } else {
                     println!(
                         "[MusicBrainz] Could not fetch artist metadata: {:?}",
                         res.err()
                     );
-                    return existing;
+                    existing
                 }
             }
             // If MBID is not available we'll need to search solely by artist name.
@@ -147,21 +147,21 @@ impl MetadataProvider for MusicBrainzWrapper {
                         if let Some(old) = existing {
                             return Some(old.merge(new));
                         }
-                        return Some(new);
+                        Some(new)
                     } else {
                         println!("[MusicBrainz] No artist metadata found for {name}");
-                        return existing;
+                        existing
                     }
                 } else {
                     println!(
                         "[MusicBrainz] Could not fetch artist metadata: {:?}",
                         res.err()
                     );
-                    return existing;
+                    existing
                 }
             }
         } else {
-            return existing;
+            existing
         }
     }
 

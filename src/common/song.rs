@@ -254,7 +254,7 @@ impl Song {
     }
 
     pub fn get_rating(&self) -> Option<i8> {
-        self.stickers().rating.clone()
+        self.stickers().rating
     }
 
     pub fn set_rating(&self, new: Option<i8>) {
@@ -267,7 +267,7 @@ impl Song {
 
     // ALL of the getters below require that the info field be initialised!
     pub fn get_info(&self) -> &SongInfo {
-        &self.imp().info.get().unwrap()
+        self.imp().info.get().unwrap()
     }
 
     pub fn get_uri(&self) -> &str {
@@ -292,35 +292,33 @@ impl Song {
             if diff_days <= 0.0 {
                 None
             }
-            else {
-                if diff_days >= 365.0 {
-                    let years = (diff_days / 365.0).floor() as u32;
-                    if years == 1 {
-                        Some("last year".to_owned())
-                    }
-                    else {
-                        Some(format!("{years} years ago"))
-                    }
-                }
-                else if diff_days >= 30.0 {
-                    // Just let a month be 30 days long on average :)
-                    let months = (diff_days / 30.0).floor() as u32;
-                    if months == 1 {
-                        Some("last month".to_owned())
-                    }
-                    else {
-                        Some(format!("{months} years ago"))
-                    }
-                }
-                else if diff_days >= 2.0 {
-                    Some(format!("{diff_days:.0} days ago"))
-                }
-                else if diff_days >= 1.0 {
-                    Some("yesterday".to_owned())
+            else if diff_days >= 365.0 {
+                let years = (diff_days / 365.0).floor() as u32;
+                if years == 1 {
+                    Some("last year".to_owned())
                 }
                 else {
-                    Some("today".to_owned())
+                    Some(format!("{years} years ago"))
                 }
+            }
+            else if diff_days >= 30.0 {
+                // Just let a month be 30 days long on average :)
+                let months = (diff_days / 30.0).floor() as u32;
+                if months == 1 {
+                    Some("last month".to_owned())
+                }
+                else {
+                    Some(format!("{months} years ago"))
+                }
+            }
+            else if diff_days >= 2.0 {
+                Some(format!("{diff_days:.0} days ago"))
+            }
+            else if diff_days >= 1.0 {
+                Some("yesterday".to_owned())
+            }
+            else {
+                Some("today".to_owned())
             }
         }
         else {
@@ -329,7 +327,7 @@ impl Song {
     }
 
     pub fn get_last_played(&self) -> Option<OffsetDateTime> {
-        self.get_info().last_played.clone()
+        self.get_info().last_played
     }
 
     pub fn get_duration(&self) -> u64 {
@@ -421,7 +419,7 @@ impl Song {
             .build();
         if let Some(album) = self.get_album() {
             meta.set_album(Some(&album.title));
-            if album.artists.len() > 0 {
+            if !album.artists.is_empty() {
                 meta.set_album_artist(Some(
                     album
                         .artists
@@ -432,7 +430,7 @@ impl Song {
             }
         }
         let artists = self.get_artists();
-        if artists.len() > 0 {
+        if !artists.is_empty() {
             meta.set_artist(Some(
                 artists
                     .iter()
@@ -539,7 +537,7 @@ impl From<mpd::song::Song> for SongInfo {
                             None,
                             None,
                             Vec::with_capacity(0),
-                            res.quality_grade.clone(),
+                            res.quality_grade,
                         ));
                     } else {
                         println!("[WARNING] Multiple Album tags found. Only keeping the first one.");
@@ -631,7 +629,7 @@ impl From<mpd::song::Song> for SongInfo {
             album.mbid = album_mbid;
             album.albumsort = albumsort;
             album.albumartistsort = albumartistsort;
-            album.release_date = res.release_date.clone();
+            album.release_date = res.release_date;
             // Assume the albumartist IDs are given in the same order as the albumartist tags
             if let Some(album_artist_str) = albumartist.as_ref() {
                 album.add_artists_from_string(album_artist_str);

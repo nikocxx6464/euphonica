@@ -207,8 +207,8 @@ mod imp {
                 )
             } else {
                 // Depend on the parent Box's measurements for height
-                let res = self.inner.get().measure(gtk::Orientation::Vertical, for_size);
-                res
+                
+                self.inner.get().measure(gtk::Orientation::Vertical, for_size)
             }
         }
 
@@ -327,15 +327,14 @@ impl AlbumCell {
                                 return;
                             }
                             if let Some(album) = this.imp().album.borrow().as_ref() {
-                                if album.get_folder_uri() == &uri {
+                                if album.get_folder_uri() == uri {
                                     // Force update since we might have been using an embedded cover
                                     // temporarily
                                     this.update_cover(tex, CoverSource::Folder);
-                                } else if this.imp().cover_source.get() != CoverSource::Folder {
-                                    if album.get_example_uri() == &uri {
+                                } else if this.imp().cover_source.get() != CoverSource::Folder
+                                    && album.get_example_uri() == uri {
                                         this.update_cover(tex, CoverSource::Embedded);
                                     }
-                                }
                             }
                         }
                     ),
@@ -351,12 +350,12 @@ impl AlbumCell {
                             if let Some(album) = this.imp().album.borrow().as_ref() {
                                 match this.imp().cover_source.get() {
                                     CoverSource::Folder => {
-                                        if album.get_folder_uri() == &uri {
+                                        if album.get_folder_uri() == uri {
                                             this.clear_cover();
                                         }
                                     }
                                     CoverSource::Embedded => {
-                                        if album.get_example_uri() == &uri {
+                                        if album.get_example_uri() == uri {
                                             this.clear_cover();
                                         }
                                     }

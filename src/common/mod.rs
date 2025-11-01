@@ -1,3 +1,5 @@
+pub mod song_row;
+pub mod row_add_buttons;
 pub mod album;
 pub mod artist;
 pub mod blend_mode;
@@ -10,6 +12,8 @@ pub mod sticker;
 pub mod theme_selector;
 pub mod dynamic_playlist;
 
+pub use song_row::SongRow;
+pub use row_add_buttons::RowAddButtons;
 pub use sticker::Stickers;
 pub use album::{Album, AlbumInfo};
 pub use artist::{artists_to_string, parse_mb_artist_tag, Artist, ArtistInfo};

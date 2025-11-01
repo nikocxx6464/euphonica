@@ -254,8 +254,8 @@ impl AlbumView {
                     4 => {
                         // AlbumArtist
                         g_cmp_str_options(
-                            album1.get_sortable_artist_tag().as_deref(),
-                            album2.get_sortable_artist_tag().as_deref(),
+                            album1.get_sortable_artist_tag(),
+                            album2.get_sortable_artist_tag(),
                             nulls_first,
                             asc,
                             case_sensitive,
@@ -529,7 +529,7 @@ impl AlbumView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(&item, cache, None);
+                let album_cell = AlbumCell::new(item, cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));

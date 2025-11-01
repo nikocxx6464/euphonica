@@ -266,9 +266,9 @@ mod imp {
                         // TODO: l10n
                         this.selecting_all.replace(false);
                         this.replace_queue_text
-                            .set_label(format!("Play {}", n_sel).as_str());
+                            .set_label(format!("Play {n_sel}").as_str());
                         this.append_queue_text
-                            .set_label(format!("Queue {}", n_sel).as_str());
+                            .set_label(format!("Queue {n_sel}").as_str());
                     }
                 }
             ));
@@ -312,12 +312,12 @@ mod imp {
 
                                 if let Ok(files) = maybe_files {
                                     let uris = files.uris();
-                                    if uris.len() > 0 {
+                                    if !uris.is_empty() {
                                         let _ = sender.send_blocking(uris[0].to_string());
                                     }
                                 }
                                 else {
-                                    println!("{:?}", maybe_files);
+                                    println!("{maybe_files:?}");
                                 }
                             });
                         }
@@ -676,7 +676,7 @@ impl PlaylistContentView {
                 let rename_from: Option<String>;
                 {
                     if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        rename_from = playlist.get_name().map(&str::to_owned);
+                        rename_from = playlist.get_name().map(str::to_owned);
                     }
                     else {
                         rename_from = None;
@@ -693,18 +693,15 @@ impl PlaylistContentView {
 
                     match library.rename_playlist(&rename_from, &rename_to) {
                         Ok(()) => {} // Wait for idle to trigger a playlist refresh
-                        Err(e) => match e {
-                            Some(MpdError::Server(ServerError {code, pos: _, command: _, detail: _})) => {
-                                this.imp().window.get().unwrap().show_dialog(
-                                    "Rename Failed",
-                                    &(match code {
-                                        MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
-                                        MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
-                                        _ => format!("Internal error ({:?})", code)
-                                    })
-                                );
-                            }
-                            _ => {}
+                        Err(e) => if let Some(MpdError::Server(ServerError {code, pos: _, command: _, detail: _})) = e {
+                            this.imp().window.get().unwrap().show_dialog(
+                                "Rename Failed",
+                                &(match code {
+                                    MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
+                                    MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
+                                    _ => format!("Internal error ({code:?})")
+                                })
+                            );
                         }
                     }
                 }
@@ -742,7 +739,7 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
+                let row = PlaylistSongRow::new(library.clone(), this.clone(), item, cache);
                 row.set_queue_controls_visible(true);
                 item.set_child(Some(&row));
             }
@@ -757,7 +754,7 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
+                let row = PlaylistSongRow::new(library.clone(), this.clone(), item, cache);
                 row.set_edit_controls_visible(true);
                 item.set_child(Some(&row));
             }

@@ -1,20 +1,17 @@
 use gio::glib::WeakRef;
-use glib::{prelude::*, clone, Object};
+use glib::{clone, Object};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use mpd::search::Operation as TagOperation;
-use once_cell::sync::Lazy;
-use std::cell::{OnceCell, RefCell};
 
-use crate::common::{dynamic_playlist::{QueryLhs, Rule, StickerObjectType, StickerOperation}, INode, Stickers};
+use crate::common::{dynamic_playlist::{QueryLhs, Rule, StickerObjectType, StickerOperation}, Stickers};
 
-use super::Library;
 
 mod imp {
-    use std::{cell::Cell, ops::{Range, RangeBounds}, str::FromStr, sync::OnceLock};
+    use std::{cell::Cell, ops::RangeBounds, str::FromStr};
 
-    use gio::glib::{subclass::Signal, ParamSpecBoolean};
+    
     use ::glib::Properties;
-    use glib::{ParamSpec, ParamSpecEnum, ParamSpecString};
+    
     use once_cell::sync::Lazy;
 
     use super::*;
@@ -303,10 +300,10 @@ mod imp {
 
         pub fn validate(&self) {
             let is_valid = match self.obj().get_rule_type() {
-                "Rating" | "Album rating" => self.rhs_is_numeric((0.0 as f64)..=(5.0 as f64)),
+                "Rating" | "Album rating" => self.rhs_is_numeric(0.0_f64..=5.0_f64),
                 "Play count" | "Skip count" => self.rhs_is_numeric((0.0 as u64)..),
                 "URI" => self.rhs_is_nonempty(),
-                "Modified within last" | "Played within last" | "Skipped within last" => self.lhs_is_numeric((0 as i64)..(3153600000 as i64)),  // Victorians didn't run Unix
+                "Modified within last" | "Played within last" | "Skipped within last" => self.lhs_is_numeric(0_i64..3153600000_i64),  // Victorians didn't run Unix
                 "Any tag" | "Tag: Album" | "Tag: Artist"
                     | "Tag: AlbumArtist" => self.rhs_is_nonempty(),
                 _ => unimplemented!()

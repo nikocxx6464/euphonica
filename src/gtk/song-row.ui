@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaSongRow" parent="GtkBox">
+    <style>
+      <class name="padding-6"/>
+    </style>
+    <child>
+      <object class="GtkBox">
+        <property name="halign">3</property>
+        <property name="valign">3</property>
+        <property name="overflow">hidden</property>
+        <style>
+          <class name="border-radius-6"/>
+        </style>
+        <child>
+          <object class="GtkImage" id="thumbnail">
+            <property name="pixel-size">36</property>
+            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCenterBox" id="center_box">
+        <property name="hexpand">true</property>
+        <property name="start-widget">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="spacing">6</property>
+            <property name="margin-start">6</property>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkLabel" id="name">
+                    <property name="halign">start</property>
+                    <property name="ellipsize">end</property>
+                    <style>
+                      <class name="heading"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage" id="quality_grade">
+                    <property name="visible">false</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">12</property>
+                <style>
+                  <class name="caption"/>
+                  <class name="dim-label"/>
+                </style>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="first_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="first_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="second_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="second_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="third_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="third_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

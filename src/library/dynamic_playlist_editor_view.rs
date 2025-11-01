@@ -243,7 +243,7 @@ mod imp {
                 .build();
 
             let action_add_ordering = gio::ActionEntry::builder("add-ordering")
-                .parameter_type(Some(&glib::VariantTy::UINT32))
+                .parameter_type(Some(glib::VariantTy::UINT32))
                 .activate(clone!(
                     #[weak]
                     obj,
@@ -396,7 +396,7 @@ impl DynamicPlaylistEditorView {
                 {
                     Ok(files) => {
                         let uris = files.uris();
-                        if uris.len() > 0 {
+                        if !uris.is_empty() {
                             let _ = sender.send_blocking(uris[0].to_string());
                         }
                     }
@@ -557,7 +557,7 @@ impl DynamicPlaylistEditorView {
                     .expect("Needs to be ListItem");
                 let row = DynamicPlaylistSongRow::new(
                     this.get_library().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
-                    &item,
+                    item,
                     this.get_cache().expect("Error: dynamic playlist editor was not bound to library controller").clone(),
                 );
                 item.set_child(Some(&row));
@@ -579,7 +579,7 @@ impl DynamicPlaylistEditorView {
                 .expect("The child has to be an `DynamicPlaylistSongRow`.");
 
             // Within this binding fn is where the cached album art texture gets used.
-            child.bind(&item);
+            child.bind(item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
@@ -646,7 +646,7 @@ impl DynamicPlaylistEditorView {
         }
         let new_rules_valid = per_rule_is_valid
             .iter()
-            .fold(true, |left, item| { left && *item });
+            .all(|item| *item);
         let old_rules_valid = self.imp().rules_valid.replace(new_rules_valid);
         if old_rules_valid != new_rules_valid {
             self.update_sensitivity();

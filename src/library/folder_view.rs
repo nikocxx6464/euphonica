@@ -502,7 +502,7 @@ impl FolderView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, &item);
+                let folder_row = GenericRow::new(library, item);
                 item.set_child(Some(&folder_row));
             }
         ));

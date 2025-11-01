@@ -207,12 +207,12 @@ mod imp {
 
                                 if let Ok(files) = maybe_files {
                                     let uris = files.uris();
-                                    if uris.len() > 0 {
+                                    if !uris.is_empty() {
                                         let _ = sender.send_blocking(uris[0].to_string());
                                     }
                                 }
                                 else {
-                                    println!("{:?}", maybe_files);
+                                    println!("{maybe_files:?}");
                                 }
                             });
                         }
@@ -253,7 +253,7 @@ mod imp {
                             }
                             spinner.set_visible(true);
                             library.clear_cover(album.get_folder_uri());
-                            library.refetch_album_metadata(&album);
+                            library.refetch_album_metadata(album);
                         }
                     }
                 ))
@@ -324,11 +324,11 @@ mod imp {
                 // TODO: l10n
                 self.selecting_all.replace(false);
                 self.replace_queue_text
-                    .set_label(format!("Play {}", n_sel).as_str());
+                    .set_label(format!("Play {n_sel}").as_str());
                 self.queue_split_button_content
-                    .set_label(format!("Queue {}", n_sel).as_str());
+                    .set_label(format!("Queue {n_sel}").as_str());
                 let queue_split_menu = Menu::new();
-                queue_split_menu.append(Some(format!("Queue {} next", n_sel).as_str()), Some("album-content-view.insert-queue"));
+                queue_split_menu.append(Some(format!("Queue {n_sel} next").as_str()), Some("album-content-view.insert-queue"));
                 self.queue_split_button.set_menu_model(Some(&queue_split_menu));
             }
         }
@@ -428,15 +428,14 @@ impl AlbumContentView {
                         return;
                     }
                     if let Some(album) = this.imp().album.borrow().as_ref() {
-                        if album.get_folder_uri() == &uri {
+                        if album.get_folder_uri() == uri {
                             // Force update since we might have been using an embedded cover
                             // temporarily
                             this.update_cover(tex, CoverSource::Folder);
-                        } else if this.imp().cover_source.get() != CoverSource::Folder {
-                            if album.get_example_uri() == &uri {
+                        } else if this.imp().cover_source.get() != CoverSource::Folder
+                            && album.get_example_uri() == uri {
                                 this.update_cover(tex, CoverSource::Embedded);
                             }
-                        }
                     }
                 }
             ),
@@ -451,12 +450,12 @@ impl AlbumContentView {
                     if let Some(album) = this.imp().album.borrow().as_ref() {
                         match this.imp().cover_source.get() {
                             CoverSource::Folder => {
-                                if album.get_folder_uri() == &uri {
+                                if album.get_folder_uri() == uri {
                                     this.clear_cover();
                                 }
                             }
                             CoverSource::Embedded => {
-                                if album.get_example_uri() == &uri {
+                                if album.get_example_uri() == uri {
                                     this.clear_cover();
                                 }
                             }
@@ -657,7 +656,7 @@ impl AlbumContentView {
                     .expect("Needs to be ListItem");
                 let row = AlbumSongRow::new(
                     this.get_library().expect("Error: album content view not connected to library").clone(),
-                    &item
+                    item
                 );
                 item.set_child(Some(&row));
             }
@@ -710,7 +709,7 @@ impl AlbumContentView {
                     this.imp().album.borrow().as_ref(),
                     this.get_library()
                 ) {
-                    library.queue_album(album.clone(), true, true, Some(position as u32));
+                    library.queue_album(album.clone(), true, true, Some(position));
                 }
             }
         ));

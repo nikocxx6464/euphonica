@@ -131,16 +131,8 @@ pub fn get_stereo_pcm(
     // will leave the earliest samples as zeros. Assume buffer never contains
     // "partial" samples, i.e. filled size is always divisible by bps * 2.
     let available = internal_buf.len() / bps / 2;
-    let read_offset: usize = if available > num_samples {
-        available - num_samples
-    } else {
-        0
-    };
-    let write_offset: usize = if available < num_samples {
-        num_samples - available
-    } else {
-        0
-    };
+    let read_offset: usize = available.saturating_sub(num_samples);
+    let write_offset: usize = num_samples.saturating_sub(available);
     // Each per-sample buffer will always be 4 bytes for easier parsing. Since we're assuming
     // little-endianness, it will be filled from the left, with the most significant bits left
     // blank if each sample has less than 32 bits.

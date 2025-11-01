@@ -142,7 +142,7 @@ glib::wrapper! {
 impl INode {
     // ALL of the getters below require that the info field be initialised!
     pub fn get_info(&self) -> &INodeInfo {
-        &self.imp().info.get().unwrap()
+        self.imp().info.get().unwrap()
     }
 
     pub fn get_uri(&self) -> &str {

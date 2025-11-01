@@ -218,12 +218,12 @@ mod imp {
 
                                 if let Ok(files) = maybe_files {
                                     let uris = files.uris();
-                                    if uris.len() > 0 {
+                                    if !uris.is_empty() {
                                         let _ = sender.send_blocking(uris[0].to_string());
                                     }
                                 }
                                 else {
-                                    println!("{:?}", maybe_files);
+                                    println!("{maybe_files:?}");
                                 }
                             });
                         }
@@ -264,7 +264,7 @@ mod imp {
                             }
                             spinner.set_visible(true);
                             library.clear_artist_avatar(artist.get_name());
-                            library.refetch_artist_metadata(&artist);
+                            library.refetch_artist_metadata(artist);
                         }
                     }
                 ))
@@ -305,9 +305,9 @@ mod imp {
                 // TODO: l10n
                 self.selecting_all.replace(false);
                 self.replace_queue_text
-                    .set_label(format!("Play {}", n_sel).as_str());
+                    .set_label(format!("Play {n_sel}").as_str());
                 self.append_queue_text
-                    .set_label(format!("Queue {}", n_sel).as_str());
+                    .set_label(format!("Queue {n_sel}").as_str());
             }
         }
     }
@@ -536,7 +536,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let song_row = ArtistSongRow::new(library, &item, cache);
+                let song_row = ArtistSongRow::new(library, item, cache);
                 item.set_child(Some(&song_row));
             }
         ));
@@ -608,7 +608,7 @@ impl ArtistContentView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 // TODO: refactor album cells to use expressions too
-                let album_cell = AlbumCell::new(&item, cache, None);
+                let album_cell = AlbumCell::new(item, cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));

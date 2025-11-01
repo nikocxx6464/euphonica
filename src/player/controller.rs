@@ -87,40 +87,38 @@ impl PlaybackFlow {
             } else {
                 PlaybackFlow::Repeat
             }
+        } else if st.single {
+            PlaybackFlow::Single
         } else {
-            if st.single {
-                PlaybackFlow::Single
-            } else {
-                PlaybackFlow::Sequential
-            }
+            PlaybackFlow::Sequential
         }
     }
 
     pub fn icon_name(&self) -> &'static str {
-        match self {
-            &PlaybackFlow::Sequential => "playlist-consecutive-symbolic",
-            &PlaybackFlow::Repeat => "playlist-repeat-symbolic",
-            &PlaybackFlow::Single => "stop-sign-outline-symbolic",
-            &PlaybackFlow::RepeatSingle => "playlist-repeat-song-symbolic",
+        match *self {
+            PlaybackFlow::Sequential => "playlist-consecutive-symbolic",
+            PlaybackFlow::Repeat => "playlist-repeat-symbolic",
+            PlaybackFlow::Single => "stop-sign-outline-symbolic",
+            PlaybackFlow::RepeatSingle => "playlist-repeat-song-symbolic",
         }
     }
 
     pub fn next_in_cycle(&self) -> Self {
-        match self {
-            &PlaybackFlow::Sequential => PlaybackFlow::Repeat,
-            &PlaybackFlow::Repeat => PlaybackFlow::Single,
-            &PlaybackFlow::Single => PlaybackFlow::RepeatSingle,
-            &PlaybackFlow::RepeatSingle => PlaybackFlow::Sequential,
+        match *self {
+            PlaybackFlow::Sequential => PlaybackFlow::Repeat,
+            PlaybackFlow::Repeat => PlaybackFlow::Single,
+            PlaybackFlow::Single => PlaybackFlow::RepeatSingle,
+            PlaybackFlow::RepeatSingle => PlaybackFlow::Sequential,
         }
     }
 
     // TODO: translatable
     pub fn description(&self) -> &'static str {
-        match self {
-            &PlaybackFlow::Sequential => "Sequential",
-            &PlaybackFlow::Repeat => "Repeat Queue",
-            &PlaybackFlow::Single => "Single Song",
-            &PlaybackFlow::RepeatSingle => "Repeat Current Song",
+        match *self {
+            PlaybackFlow::Sequential => "Sequential",
+            PlaybackFlow::Repeat => "Repeat Queue",
+            PlaybackFlow::Single => "Single Song",
+            PlaybackFlow::RepeatSingle => "Repeat Current Song",
         }
     }
 }
@@ -164,7 +162,7 @@ fn get_replaygain_icon_name(mode: ReplayGain) -> &'static str {
 }
 
 mod imp {
-    use std::num::NonZero;
+    
 
     use super::*;
     use crate::{application::EuphonicaApplication, common::CoverSource, meta_providers::models::Lyrics};
@@ -234,7 +232,8 @@ mod imp {
             // 0 = fifo
             // 1 = pipewire
 
-            let res = Self {
+            
+            Self {
                 state: Cell::new(PlaybackState::Stopped),
                 position: Cell::new(0.0),
                 lyric_lines: gtk::StringList::new(&[]),
@@ -283,8 +282,7 @@ mod imp {
                 cover_source: Cell::default(),
                 saved_to_history: Cell::new(false),
                 is_foreground: Cell::new(false)
-            };
-            res
+            }
         }
     }
 
@@ -679,16 +677,15 @@ impl Player {
                     // - Match by folder URI only if there is no current cover.
                     if thumb {return;}
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
-                        if song.get_uri() == &uri {
+                        if song.get_uri() == uri {
                             // Always do this to force upgrade to embedded cover from folder cover
                             this.imp().cover_source.set(CoverSource::Embedded);
                             this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
-                        } else if this.imp().cover_source.get() != CoverSource::Embedded {
-                            if strip_filename_linux(song.get_uri()) == &uri {
+                        } else if this.imp().cover_source.get() != CoverSource::Embedded
+                            && strip_filename_linux(song.get_uri()) == uri {
                                 this.imp().cover_source.set(CoverSource::Folder);
                                 this.emit_by_name::<()>("cover-changed", &[&Some(tex)]);
                             }
-                        }
                     }
                 }
             ),
@@ -704,13 +701,13 @@ impl Player {
                     if let Some(song) = this.imp().current_song.borrow().as_ref() {
                         match this.imp().cover_source.get() {
                             CoverSource::Embedded => {
-                                if song.get_uri() == &uri {
+                                if song.get_uri() == uri {
                                     this.imp().cover_source.set(CoverSource::None);
                                     this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                                 }
                             }
                             CoverSource::Folder => {
-                                if strip_filename_linux(song.get_uri()) == &uri {
+                                if strip_filename_linux(song.get_uri()) == uri {
                                     this.imp().cover_source.set(CoverSource::None);
                                     this.emit_by_name::<()>("cover-changed", &[&Option::<gdk::Texture>::None]);
                                 }
@@ -857,11 +854,11 @@ impl Player {
                 match this.get_mpris().await {
                     Ok(mpris) => {
                         if let Err(err) = mpris.properties_changed(properties).await {
-                            println!("{:?}", err);
+                            println!("{err:?}");
                         }
                     }
                     Err(err) => {
-                        println!("No MPRIS server: {:?}", err);
+                        println!("No MPRIS server: {err:?}");
                     }
                 }
             }
@@ -879,11 +876,11 @@ impl Player {
                         if let Err(err) =
                             mpris.emit(MprisSignal::Seeked { position: pos_time }).await
                         {
-                            println!("{:?}", err);
+                            println!("{err:?}");
                         }
                     }
                     Err(err) => {
-                        println!("No MPRIS server: {:?}", err);
+                        println!("No MPRIS server: {err:?}");
                     }
                 }
             }
@@ -1194,7 +1191,7 @@ impl Player {
                 && self.imp().fft_backend.borrow().as_ref().is_some_and(
                     |backend| backend.name() == "pipewire" && backend.status() != FftStatus::ValidNotReading
                 )
-                && secs_to_end >= 0.0 && secs_to_end < 1.5
+                && (0.0..1.5).contains(&secs_to_end)
             {
                 println!("Stopping PipeWire backend to allow samplerate change...");
                 self.maybe_stop_fft_thread(false); // FIXME: we can't block while runnin in an async loop
@@ -1269,7 +1266,7 @@ impl Player {
     /// If an MPRIS server is running, it will also emit property change signals.
     pub fn update_queue(&self, changes: &[SongInfo]) {
         let queue = &self.imp().queue;
-        if changes.len() > 0 {
+        if !changes.is_empty() {
             // Find queue range covered by the changes vec
             let mut max_pos: u32 = 0;
             let mut min_pos: u32 = u32::MAX;
@@ -1292,7 +1289,7 @@ impl Player {
                 // length will be included in the changes vec.
                 let this_pos = changes[change_idx].queue_pos.unwrap();
                 if this_pos != pos {
-                    if let Some(old_song) = queue.item(pos as u32) {
+                    if let Some(old_song) = queue.item(pos) {
                         new_segment.push(old_song);
                     } else {
                         // Exceeded current queue (new queue is longer)
@@ -1405,9 +1402,8 @@ impl Player {
     pub fn current_song_cover_path(&self, thumbnail: bool) -> Option<PathBuf> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
             let mut path = get_image_cache_path();
-            if let Some(filename) = sqlite::find_cover_by_uri(&song.get_uri(), thumbnail)
-                .expect("Sqlite DB error")
-                .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+            if let Some(filename) = sqlite::find_cover_by_uri(song.get_uri(), thumbnail)
+                .expect("Sqlite DB error").and_then(|name| if !name.is_empty() {Some(name)} else {None})
             {
                 // Will fall back to folder level cover if there is no embedded art
                 path.push(filename);
@@ -1422,7 +1418,7 @@ impl Player {
     }
 
     pub fn rating(&self) -> Option<i8> {
-        self.imp().current_song.borrow().as_ref().map(|s| s.get_rating()).flatten()
+        self.imp().current_song.borrow().as_ref().and_then(|s| s.get_rating())
     }
 
     pub fn quality_grade(&self) -> QualityGrade {
@@ -1621,7 +1617,7 @@ impl Player {
     }
 
     pub fn save_queue(&self, name: &str, save_mode: SaveMode) -> Result<(), Option<MpdError>> {
-        return self.client().save_queue_as_playlist(name, save_mode);
+        self.client().save_queue_as_playlist(name, save_mode)
     }
 
     /// Periodically poll for player progress to update seekbar.
@@ -1658,12 +1654,12 @@ impl Player {
 
     pub fn import_lyrics(&self, text: &str) {
         if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
-            if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(&text)
+            if let Ok(lyrics) = Lyrics::try_from_synced_lrclib_str(text)
                 // .map_err(|res| {
                 //     println!("Synced lyrics parse error: {:?}", &res);
                 //     return res;
                 // })
-                .or_else(|_| Lyrics::try_from_plain_lrclib_str(&text))
+                .or_else(|_| Lyrics::try_from_plain_lrclib_str(text))
             {
                 sqlite::write_lyrics(curr_song.get_info(), Some(&lyrics))
                     .expect("Unable to import lyrics into SQLite DB");
@@ -1674,7 +1670,7 @@ impl Player {
 
     pub fn clear_lyrics(&self) {
         if let Some(curr_song) = self.imp().current_song.borrow().as_ref() {
-            sqlite::write_lyrics(&curr_song.get_info(), None).expect("Unable to clear lyrics from DB");
+            sqlite::write_lyrics(curr_song.get_info(), None).expect("Unable to clear lyrics from DB");
             self.imp().lyric_lines.splice(0, self.imp().lyric_lines.n_items(), &[]);
             let _ = self.imp().lyrics.take();
         }
@@ -1777,7 +1773,7 @@ impl LocalPlayerInterface for Player {
     }
 
     async fn stop(&self) -> fdo::Result<()> {
-        let _ = self.client().stop();
+        self.client().stop();
         Ok(())
     }
 
@@ -1792,13 +1788,13 @@ impl LocalPlayerInterface for Player {
     /// io/github/htkhiem/Euphonica/<queue_id>
     async fn set_position(&self, track_id: TrackId, position: Time) -> fdo::Result<()> {
         if let Some(song) = self.imp().current_song.borrow().as_ref() {
-            if track_id.as_str().split("/").last().unwrap() == &song.get_queue_id().to_string() {
+            if track_id.as_str().split("/").last().unwrap() == song.get_queue_id().to_string() {
                 self.send_seek(position.as_millis() as f64 / 1000.0);
                 return Ok(());
             }
             return Err(fdo::Error::Failed("Song has already changed".to_owned()));
         }
-        return Err(fdo::Error::Failed("No song is being played".to_owned()));
+        Err(fdo::Error::Failed("No song is being played".to_owned()))
     }
 
     async fn open_uri(&self, _uri: String) -> fdo::Result<()> {
@@ -1817,7 +1813,7 @@ impl LocalPlayerInterface for Player {
 
     async fn set_loop_status(&self, loop_status: LoopStatus) -> zbus::Result<()> {
         let flow: PlaybackFlow = loop_status.into();
-        let _ = self.client().set_playback_flow(flow);
+        self.client().set_playback_flow(flow);
         Ok(())
     }
 

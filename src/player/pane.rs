@@ -496,7 +496,7 @@ impl PlayerPane {
             }
         ));
 
-        self.update_outputs(&player);
+        self.update_outputs(player);
         player.connect_closure(
             "outputs-changed",
             false,
@@ -592,11 +592,10 @@ impl PlayerPane {
                         if let Some(uri) = receiver
                             .recv().await
                                    .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                   .map(|sel_files| {
+                                   .and_then(|sel_files| {
                                        let uris = sel_files.uris();
-                                       if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                       if uris.is_empty() {None} else {Some(uris[0].to_string())}
                                    })
-                                   .flatten()
                         {
                             let uri = urlencoding::decode(if uri.starts_with("file://") {
                                 &uri[7..]
@@ -637,11 +636,10 @@ impl PlayerPane {
                             if let Some(uri) = receiver
                                 .recv().await
                                        .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                       .map(|sel_files| {
+                                       .and_then(|sel_files| {
                                            let uris = sel_files.uris();
-                                           if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                           if uris.is_empty() {None} else {Some(uris[0].to_string())}
                                        })
-                                       .flatten()
                             {
                                 let uri = urlencoding::decode(if uri.starts_with("file://") {
                                     &uri[7..]
@@ -665,8 +663,8 @@ impl PlayerPane {
             }
         ));
 
-        self.update_lyrics_availability(&player);
-        self.update_lyrics_state(&player);
+        self.update_lyrics_availability(player);
+        self.update_lyrics_state(player);
     }
 
     fn update_album_art(&self, tex: Option<gdk::Texture>) {
@@ -687,7 +685,7 @@ impl PlayerPane {
             .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
-        let new_len = outputs.len() as usize;
+        let new_len = outputs.len();
         if new_len == 0 {
             section.set_visible(false);
         } else {
@@ -726,7 +724,7 @@ impl PlayerPane {
                 }
                 output_widgets.reserve_exact(new_len - curr_len);
                 for o in &outputs[curr_len..] {
-                    let w = MpdOutput::from_output(&o.borrow(), &player);
+                    let w = MpdOutput::from_output(&o.borrow(), player);
                     stack.add_child(&w);
                     output_widgets.push(w);
                 }

@@ -5,7 +5,6 @@ pub mod wrapper;
 pub mod password;
 
 use mpd::{lsinfo::LsInfoEntry, Query, Subsystem, error::Error as MpdError};
-use state::StickersSupportLevel;
 pub use state::{ClientState, ConnectionState, ClientError};
 pub use wrapper::MpdWrapper;
 

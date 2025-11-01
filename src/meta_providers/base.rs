@@ -64,7 +64,7 @@ pub mod utils {
                 Ok(res) => {
                     if let Ok(bytes) = res.bytes() {
                         if let Ok(s) = str::from_utf8(&bytes) {
-                            println!("Received UTF8 instead: {}", s);
+                            println!("Received UTF8 instead: {s}");
                         }
                         Some(bytes.to_vec())
                     } else {
@@ -73,7 +73,7 @@ pub mod utils {
                     }
                 },
                 Err(e) => {
-                    println!("get_file: {:?}", e);
+                    println!("get_file: {e:?}");
                     None
                 }
             }

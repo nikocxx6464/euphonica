@@ -471,7 +471,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
-                                        Some(get_dominant_color(&data)),  // No need to update accent colour
+                                        Some(get_dominant_color(data)),  // No need to update accent colour
                                         config.fade,
                                     ));
                                 }
@@ -660,10 +660,8 @@ mod imp {
                 {
                     old_id.remove();
                 }
-            } else {
-                if let Some(old_id) = self.tick_callback.take() {
-                    old_id.remove();
-                }
+            } else if let Some(old_id) = self.tick_callback.take() {
+                old_id.remove();
             }
         }
 
@@ -690,8 +688,8 @@ mod imp {
                 // - No two points share the same x-coordinate (duh), and
                 // - X-coordinates are monotonically increasing
                 // we can cheat a bit and avoid having to solve for Beizer control points.
-                let half_width = band_width as f32 / 2.0;
-                let quarter_width = band_width as f32 / 4.0;
+                let half_width = band_width / 2.0;
+                let quarter_width = band_width / 4.0;
                 for i in 0..(data.len() - 1) {
                     let x = (i as f32 + 1.0) * band_width;
                     let y = (height - data[i] * scale * 1000000.0).max(0.0);
@@ -784,7 +782,7 @@ mod imp {
                     return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
                 }
             }
-            return false;
+            false
         }
 
         /// Fade to the new texture, or to nothing if playing song has no album art.
@@ -794,10 +792,8 @@ mod imp {
                 if !self.content.has_css_class("no-shading") {
                     self.content.add_css_class("no-shading");
                 }
-            } else {
-                if self.content.has_css_class("no-shading") {
-                    self.content.remove_css_class("no-shading");
-                }
+            } else if self.content.has_css_class("no-shading") {
+                self.content.remove_css_class("no-shading");
             }
             // Will immediately re-blur and upload to GPU at current size
             bg_paintable.set_new_content(tex);
@@ -922,11 +918,8 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 win,
                 move |_: ClientState, subsys: BoxedAnyObject| {
-                    match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Database => {
-                            this.send_simple_toast("Database updated with changes", 3);
-                        }
-                        _ => {}
+                    if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
+                        this.send_simple_toast("Database updated with changes", 3);
                     }
                 }
             ),
@@ -1037,7 +1030,7 @@ impl EuphonicaWindow {
 
     fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
         // Show an alert ONLY IF the preferences dialog is not already open.
-        if !self.visible_dialog().is_some() {
+        if self.visible_dialog().is_none() {
             let diag = adw::AlertDialog::builder()
                 .heading(heading)
                 .body(body)
@@ -1234,8 +1227,7 @@ impl EuphonicaWindow {
         if let Some(player) = self.imp().player.get() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
                 if let Some(path) = player
-                    .current_song_cover_path(true)
-                    .map_or(None, |path| if path.exists() {Some(path)} else {None})
+                    .current_song_cover_path(true).and_then(|path| if path.exists() {Some(path)} else {None})
                 {
                     let settings = settings_manager().child("ui");
                     let config = BlurConfig {

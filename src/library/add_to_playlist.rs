@@ -275,10 +275,10 @@ mod imp {
                     // Name might be empty in this case but it's okay since we would
                     // have hidden the button
                     self.add_btn
-                        .set_label(format!("Create \"{}\"", name).as_str());
+                        .set_label(format!("Create \"{name}\"").as_str());
                 } else {
                     self.add_btn
-                        .set_label(format!("Append to \"{}\"", name).as_str());
+                        .set_label(format!("Append to \"{name}\"").as_str());
                 }
             } else {
                 self.add_btn.set_sensitive(false);
@@ -292,6 +292,12 @@ glib::wrapper! {
     pub struct AddToPlaylistButton(ObjectSubclass<imp::AddToPlaylistButton>)
     @extends gtk::Box, gtk::Widget,
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
+}
+
+impl Default for AddToPlaylistButton {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl AddToPlaylistButton {

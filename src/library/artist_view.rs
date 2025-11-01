@@ -408,7 +408,7 @@ impl ArtistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(&item, cache);
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
             }
         ));

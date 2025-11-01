@@ -21,7 +21,7 @@ pub async fn get_mpd_password() -> Result<Option<String>, String> {
     )
         .await
         .map(|op| op.map(|gs| gs.as_str().to_owned()))
-        .map_err(|ge| format!("{:?}", ge))
+        .map_err(|ge| format!("{ge:?}"))
 }
 
 pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String> {
@@ -38,13 +38,13 @@ pub async fn set_mpd_password(maybe_password: Option<&str>) -> Result<(), String
             password
         )
             .await
-            .map_err(|ge| format!("{:?}", ge))
+            .map_err(|ge| format!("{ge:?}"))
     } else {
         libsecret::password_clear_future(
             Some(&schema),
             attributes
         )
             .await
-            .map_err(|ge| format!("{:?}", ge))
+            .map_err(|ge| format!("{ge:?}"))
     }
 }

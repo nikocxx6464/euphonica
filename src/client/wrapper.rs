@@ -578,7 +578,7 @@ impl MpdWrapper {
                 });
             } else {
                 handle = gio::spawn_blocking(move || {
-                    let stream = StreamWrapper::new_unix(UnixStream::connect(&path.as_str()).map_err(mpd::error::Error::Io)?);
+                    let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io)?);
                     mpd::Client::new(stream)
                 });
             }
@@ -792,7 +792,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return None;
+        None
     }
 
     pub fn get_known_stickers(&self, typ: &str, uri: &str) -> Option<Stickers> {
@@ -812,7 +812,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return None;
+        None
     }
 
     pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str, mode: StickerSetMode) {
@@ -857,7 +857,7 @@ impl MpdWrapper {
             self.state.set_supports_playlists(false);
             println!("Playlists are not supported.");
         } else {
-            println!("Playlist operation error: {:?}", err);
+            println!("Playlist operation error: {err:?}");
         }
     }
 
@@ -882,7 +882,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Vec::with_capacity(0);
+        Vec::with_capacity(0)
     }
 
     pub fn load_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
@@ -903,7 +903,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Err(None);
+        Err(None)
     }
 
     pub fn save_queue_as_playlist(
@@ -929,7 +929,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Err(None);
+        Err(None)
     }
 
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {
@@ -945,7 +945,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 },
             }
         } else {
@@ -966,7 +966,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 }
             }
         } else {
@@ -987,7 +987,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 }
             }
         } else {
@@ -1009,8 +1009,8 @@ impl MpdWrapper {
                 // Check whether we need to sync queue with server side (inefficient)
                 if sync_queue {
                     let old_version = self.queue_version.replace(status.queue_version);
-                    if status.queue_version > old_version {
-                        if status.queue_version > self.expected_queue_version.get() {
+                    if status.queue_version > old_version
+                        && status.queue_version > self.expected_queue_version.get() {
                             self.expected_queue_version.set(status.queue_version);
                             self.queue_background(
                                 if old_version == 0 {
@@ -1021,7 +1021,6 @@ impl MpdWrapper {
                                 true
                             );
                         }
-                    }
                 }
                 Some(status)
             }
@@ -1041,7 +1040,7 @@ impl MpdWrapper {
         if let Some(res) = resp {
             match res {
                 Ok(mut songs) => {
-                    if songs.len() > 0 {
+                    if !songs.is_empty() {
                         // Found a song. Now fetch its stickers.
                         let res = Song::from(std::mem::take(&mut songs[0]));
                         if fetch_stickers {

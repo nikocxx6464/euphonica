@@ -410,7 +410,7 @@ impl Library {
     pub fn folder_path(&self) -> String {
         let history = self.imp().folder_history.borrow();
         let curr_idx = self.imp().folder_curr_idx.get();
-        if history.len() > 0 && curr_idx > 0 {
+        if !history.is_empty() && curr_idx > 0 {
             history[..curr_idx as usize].join("/")
         } else {
             "".to_string()

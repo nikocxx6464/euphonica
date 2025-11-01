@@ -286,14 +286,14 @@ impl VolumeKnob {
         let val = self.imp().value.get();
         if self.imp().use_dbfs.get() {
             if let Ok(dbfs) = convert_to_dbfs(val) {
-                readout.set_label(&format!("{:.2}", dbfs));
+                readout.set_label(&format!("{dbfs:.2}"));
             } else if val > 0.0 {
                 readout.set_label("0");
             } else {
                 readout.set_label("-∞");
             }
         } else {
-            readout.set_label(&format!("{:.0}", val));
+            readout.set_label(&format!("{val:.0}"));
         }
     }
 }

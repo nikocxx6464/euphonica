@@ -4,10 +4,9 @@ use gtk::{
     glib::{self, closure_local},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
-use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
+use std::{cell::Cell, cmp::Ordering, rc::Rc};
 
 use glib::clone;
-use mpd::Subsystem;
 
 use super::Library;
 use crate::{
@@ -468,7 +467,7 @@ impl DynamicPlaylistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = PlaylistRow::new(library, &item, cache);
+                let folder_row = PlaylistRow::new(library, item, cache);
                 item.set_child(Some(&folder_row));
             }
         ));

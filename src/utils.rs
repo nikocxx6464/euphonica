@@ -46,26 +46,26 @@ pub fn format_secs_as_duration(seconds: f64) -> String {
     let seconds = total_seconds % 60;
 
     if days > 0 {
-        format!("{} days {:02}:{:02}:{:02}", days, hours, minutes, seconds)
+        format!("{days} days {hours:02}:{minutes:02}:{seconds:02}")
     } else if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
-        format!("{:02}:{:02}", minutes, seconds)
+        format!("{minutes:02}:{seconds:02}")
     }
 }
 
 pub fn format_bitrate(bitrate_kbps: u32) -> String {
     if bitrate_kbps < 5000 {
-        format!("{}kbps", bitrate_kbps)
+        format!("{bitrate_kbps}kbps")
     } else {
         let bitrate_mbps = bitrate_kbps as f64 / 1000.0;
         let mut buffer = String::new();
-        let result = write!(&mut buffer, "{:.2}Mbps", bitrate_mbps);
+        let result = write!(&mut buffer, "{bitrate_mbps:.2}Mbps");
 
         match result {
             Ok(_) => buffer,
             Err(e) => {
-                format!("{:?}", e)
+                format!("{e:?}")
             }
         }
     }
@@ -172,7 +172,7 @@ pub fn strip_filename_linux(path: &str) -> &str {
 }
 
 pub fn read_image_from_bytes(bytes: Vec<u8>) -> Option<DynamicImage> {
-    if let Some(dyn_img) = image::load_from_memory(&bytes).ok() {
+    if let Ok(dyn_img) = image::load_from_memory(&bytes) {
         Some(dyn_img)
     } else {
         println!("read_image_from_bytes: Unable to infer image format from content");

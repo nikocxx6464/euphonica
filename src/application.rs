@@ -305,7 +305,7 @@ impl EuphonicaApplication {
         let window = if let Some(window) = self.active_window() {
             window
         } else {
-            let window = EuphonicaWindow::new(&*self);
+            let window = EuphonicaWindow::new(self);
             window.upcast()
         };
         self.imp().player.get().unwrap().set_is_foreground(true);

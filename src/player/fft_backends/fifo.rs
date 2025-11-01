@@ -48,7 +48,7 @@ impl FftBackendImpl for FifoFftBackend {
     fn start(self: Rc<Self>, output: Arc<Mutex<(Vec<f32>, Vec<f32>)>>) -> Result<(), ()> {
         self.stop_flag.store(false, Ordering::Relaxed);
         let curr_status = self.status();
-        println!("Current status: {:?}", curr_status);
+        println!("Current status: {curr_status:?}");
         if curr_status != FftStatus::Reading && curr_status != FftStatus::Stopping {
             let stop_flag = self.stop_flag.clone();
             let (sender, receiver) = async_channel::unbounded::<FftStatus>();

@@ -97,11 +97,12 @@ impl MpdOutput {
             enable_output.set_active(output.enabled);
         }
         icon.set_icon_name(Some(map_icon_name(&output.plugin)));
-        if output.attributes.len() > 0 {
+        let _ = self.imp().enabled.replace(output.enabled);
+        if !output.attributes.is_empty() {
             // Big TODO: editable runtime attributes
             let mut attribs: Vec<String> = Vec::with_capacity(output.attributes.len());
             for (k, v) in output.attributes.iter() {
-                attribs.push(format!("<b>{}</b>: {}", k, v));
+                attribs.push(format!("<b>{k}</b>: {v}"));
             }
 
             options_preview.set_visible(true);

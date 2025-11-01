@@ -185,12 +185,10 @@ fn format_song_count(count: u32) -> Option<String> {
     // TODO: translatable
     if count == 0 {
         Some(String::from("Empty"))
+    } else if count == 1 {
+        Some(String::from("1 song"))
     } else {
-        if count == 1 {
-            Some(String::from("1 song"))
-        } else {
-            Some(format!("{} songs", count))
-        }
+        Some(format!("{count} songs"))
     }
 }
 
@@ -232,7 +230,7 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let queue_row = QueueRow::new(&item, player, cache);
+                let queue_row = QueueRow::new(item, player, cache);
                 item.set_child(Some(&queue_row));
             }
         ));
@@ -254,7 +252,7 @@ impl QueueView {
                     .expect("The child has to be a `QueueRow`.");
 
                 // Within this binding fn is where the cached album art texture gets used.
-                child.bind(&item);
+                child.bind(item);
 
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
@@ -399,16 +397,13 @@ impl QueueView {
                 let name = save_name.buffer().text().as_str().to_owned();
                 match player.save_queue(&name, SaveMode::Create) {
                     Ok(()) => {}
-                    Err(e) => match e {
-                        Some(MpdError::Server(ServerError {
+                    Err(e) => if let Some(MpdError::Server(ServerError {
                             code: MpdErrorCode::Exist,
                             pos: _,
                             command: _,
                             detail: _,
-                        })) => {
-                            this.show_save_error_dialog(name, player);
-                        }
-                        _ => {}
+                        })) = e {
+                        this.show_save_error_dialog(name, player);
                     },
                 }
             }

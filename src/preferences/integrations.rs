@@ -164,7 +164,7 @@ impl IntegrationsPreferences {
             .array_iter_str()
             .unwrap()
             .enumerate()
-            .map(|(prio, key)| ProviderRow::new(&self, key, prio as i32))
+            .map(|(prio, key)| ProviderRow::new(self, key, prio as i32))
         {
             order_box.append(&row);
         }
@@ -226,7 +226,7 @@ impl IntegrationsPreferences {
     pub fn on_raise_provider(&self, curr_prio: i32) {
         if curr_prio > 0 {
             let order_box = self.imp().order_box.get();
-            let this_row = order_box.row_at_index(curr_prio as i32).unwrap();
+            let this_row = order_box.row_at_index(curr_prio).unwrap();
             let this_row = this_row
                 .downcast_ref::<adw::PreferencesRow>()
                 .unwrap()
@@ -234,7 +234,7 @@ impl IntegrationsPreferences {
                 .unwrap()
                 .downcast_ref::<ProviderRow>()
                 .unwrap();
-            let upper_row = order_box.row_at_index((curr_prio - 1) as i32).unwrap();
+            let upper_row = order_box.row_at_index(curr_prio - 1).unwrap();
             let upper_row = upper_row
                 .downcast_ref::<adw::PreferencesRow>()
                 .unwrap()
@@ -251,8 +251,8 @@ impl IntegrationsPreferences {
 
     pub fn on_lower_provider(&self, curr_prio: i32) {
         let order_box = self.imp().order_box.get();
-        if let Some(lower_list_row) = order_box.row_at_index((curr_prio + 1) as i32) {
-            let this_row = order_box.row_at_index(curr_prio as i32).unwrap();
+        if let Some(lower_list_row) = order_box.row_at_index(curr_prio + 1) {
+            let this_row = order_box.row_at_index(curr_prio).unwrap();
             let this_row = this_row
                 .downcast_ref::<adw::PreferencesRow>()
                 .unwrap()

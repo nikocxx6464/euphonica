@@ -3,9 +3,9 @@ use adw::prelude::*;
 use gtk::{glib, subclass::prelude::*};
 use std::cell::Cell;
 
-const FULL: &'static str = "star-large-symbolic";
-const HALF: &'static str = "star-outline-half-left-symbolic";
-const NONE: &'static str = "star-outline-rounded-symbolic";
+const FULL: &str = "star-large-symbolic";
+const HALF: &str = "star-outline-half-left-symbolic";
+const NONE: &str = "star-outline-rounded-symbolic";
 
 mod imp {
     use std::sync::OnceLock;

@@ -11,12 +11,7 @@ use glib::{clone, closure_local, Properties};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
-    utils::LazyInit,
-    cache::Cache,
-    common::{marquee::MarqueeWrapMode, Album, Artist, Song},
-    library::recent_song_row::RecentSongRow,
-    player::Player,
-    window::EuphonicaWindow
+    cache::Cache, common::{marquee::MarqueeWrapMode, Album, Artist, RowAddButtons, Song, SongRow}, player::Player, utils::LazyInit, window::EuphonicaWindow
 };
 
 mod imp {
@@ -285,7 +280,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(&item, cache, Some(MarqueeWrapMode::Scroll));
+                let album_cell = AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));
@@ -385,7 +380,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(&item, cache);
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
                 adj.set_value(0.0);
@@ -467,7 +462,23 @@ impl RecentView {
         self.imp().song_list.bind_model(
             Some(&song_list),
             move |obj| {
-                let row = RecentSongRow::new(library.clone(), obj.downcast_ref::<Song>().unwrap(), cache.clone());
+                let song = obj.downcast_ref::<Song>().unwrap();
+                let row = SongRow::new(cache.clone());
+                // Manually bind attributes here
+                row.set_name(song.get_name());
+                row.set_quality_grade(song.get_quality_grade());
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                row.set_first_attrib_text(song.get_album_title());
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                row.set_second_attrib_text(song.get_artist_tag());
+                row.set_third_attrib_icon_name(Some("recent-symbolic"));
+                row.set_third_attrib_text(song.get_last_played_desc().as_deref());
+
+                let end_widget = RowAddButtons::new(&library);
+                end_widget.set_song(Some(&song));
+                row.set_end_widget(Some(&end_widget.into()));
+
+                row.on_bind(song);
                 row.into()
             }
         );

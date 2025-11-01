@@ -280,11 +280,10 @@ impl QueueRow {
                                 // Force update since we might have been using a folder cover
                                 // temporarily
                                 this.update_thumbnail(tex, CoverSource::Embedded);
-                            } else if this.imp().thumbnail_source.get() != CoverSource::Embedded {
-                                if strip_filename_linux(song.get_uri()) == uri {
+                            } else if this.imp().thumbnail_source.get() != CoverSource::Embedded
+                                && strip_filename_linux(song.get_uri()) == uri {
                                     this.update_thumbnail(tex, CoverSource::Folder);
                                 }
-                            }
                         }
                     }
                 ),
@@ -304,7 +303,7 @@ impl QueueRow {
                                     }
                                 }
                                 CoverSource::Embedded => {
-                                    if song.get_uri() == &uri {
+                                    if song.get_uri() == uri {
                                         this.clear_thumbnail();
                                     }
                                 }

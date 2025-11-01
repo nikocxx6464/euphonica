@@ -269,7 +269,7 @@ impl Lyrics {
         let mut offset: f32 = 0.0;
         for raw_line in raw_lines.iter() {
             let line = raw_line.trim();
-            if line.len() > 0 {
+            if !line.is_empty() {
                 // Extract timestamp
                 let ts_end_pos: usize = line
                     .find(']')
@@ -337,7 +337,7 @@ impl Lyrics {
             let hundredths = (remaining_seconds.fract() * 100.0).round() as u32;
 
             // Format the components into the desired string
-            format!("[{:02}:{:02}.{:02}] {}", minutes, seconds_integer, hundredths, content)
+            format!("[{minutes:02}:{seconds_integer:02}.{hundredths:02}] {content}")
         }).collect::<Vec<String>>().join("\n")
         }
         else {

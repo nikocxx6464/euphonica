@@ -21,7 +21,7 @@ use crate::{
 // not applicable for opening namedpipes.
 use ashpd::desktop::file_chooser::SelectedFiles;
 
-const FFT_SIZES: &'static [u32; 4] = &[512, 1024, 2048, 4096];
+const FFT_SIZES: &[u32; 4] = &[512, 1024, 2048, 4096];
 
 pub enum StatusIconState {
     Disabled,
@@ -207,7 +207,7 @@ mod imp {
                     if let Ok(files) = maybe_files {
                         let fifo_settings = utils::settings_manager().child("client");
                         let uris = files.uris();
-                        if uris.len() > 0 {
+                        if !uris.is_empty() {
                             fifo_settings
                                 .set_string(
                                     "mpd-fifo-path",
@@ -217,7 +217,7 @@ mod imp {
                         }
                     }
                     else {
-                        println!("{:?}", maybe_files);
+                        println!("{maybe_files:?}");
                     }
                 });
             });
@@ -411,7 +411,7 @@ impl ClientPreferences {
                     }
                 }
                 Err(e) => {
-                    println!("{:?}", e);
+                    println!("{e:?}");
                 }
             }
         });
@@ -462,7 +462,7 @@ impl ClientPreferences {
                 #[weak(rename_to = this)]
                 self,
                 move |cs, _| {
-                    this.on_playlists_status_changed(&cs);
+                    this.on_playlists_status_changed(cs);
                 }
             ),
         );
@@ -474,7 +474,7 @@ impl ClientPreferences {
                 #[weak(rename_to = this)]
                 self,
                 move |cs, _| {
-                    this.on_stickers_status_changed(&cs);
+                    this.on_stickers_status_changed(cs);
                 }
             ),
         );
@@ -508,7 +508,7 @@ impl ClientPreferences {
                             Ok(()) => {
                                 client.connect_async().await;
                             }
-                            Err(msg) => {println!("{}", msg);}
+                            Err(msg) => {println!("{msg}");}
                         }
                     }
                 ));
@@ -637,10 +637,10 @@ impl ClientPreferences {
 
     fn update_pipewire_devices(&self, maybe_devices: Option<Vec<String>>) {
         self.imp().pipewire_devices.set_model(
-            maybe_devices.and_then(|devices: Vec<String>| {
+            maybe_devices.map(|devices: Vec<String>| {
                 let mut device_list = vec!["(auto)"];
                 device_list.append(&mut devices.iter().map(String::as_ref).collect::<Vec<&str>>());
-                Some(gtk::StringList::new(&device_list))
+                gtk::StringList::new(&device_list)
             }).as_ref()
         );
     }

@@ -119,7 +119,7 @@ fn set_image_internal(key: &String, key_prefix: Option<&'static str>, filepath: 
 }
 
 fn clear_image_internal(key: &String, key_prefix: Option<&'static str>) {
-    if let Some(hires_name) = sqlite::find_image_by_key(&key, key_prefix, false).unwrap() {
+    if let Some(hires_name) = sqlite::find_image_by_key(key, key_prefix, false).unwrap() {
         let mut hires_path = get_image_cache_path();
         hires_path.push(&hires_name);
         sqlite::unregister_image_key(key.clone(), key_prefix, false)
@@ -127,7 +127,7 @@ fn clear_image_internal(key: &String, key_prefix: Option<&'static str>) {
         IMAGE_CACHE.lock().unwrap().pop(&hires_name);
         let _ = std::fs::remove_file(hires_path);
     }
-    if let Some(thumb_name) = sqlite::find_image_by_key(&key, key_prefix, true).unwrap() {
+    if let Some(thumb_name) = sqlite::find_image_by_key(key, key_prefix, true).unwrap() {
         let mut thumb_path = get_image_cache_path();
         thumb_path.push(&thumb_name);
         sqlite::unregister_image_key(key.clone(), key_prefix, true)
@@ -277,7 +277,7 @@ impl Cache {
                                         if let Some(artist) = res {
                                             sqlite::write_artist_meta(&key, &artist)
                                                 .expect("Unable to write downloaded artist meta");
-                                            if !sqlite::find_image_by_key(&key.name, Some("avatar"), false).expect("Sqlite DB error").is_some() {
+                                            if sqlite::find_image_by_key(&key.name, Some("avatar"), false).expect("Sqlite DB error").is_none() {
                                                 // Try to download artist avatar too
                                                 let res = get_best_image(&artist.image);
                                                 let (path, thumbnail_path) = get_new_image_paths();
@@ -526,7 +526,7 @@ impl Cache {
                                     let _ =
                                         fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri, thumbnail, tex));
                                     // End here
-                                    return None;
+                                    None
                                 } else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
@@ -534,7 +534,7 @@ impl Cache {
                                         .join().unwrap().expect("Sqlite DB error");
                                     println!("Unregistered image. Retrying...");
                                     // Return song info object to facilitate recursive retry
-                                    return Some(song);
+                                    Some(song)
 
                                 }
                             }).map_ok(move |song_to_retry| {
@@ -583,7 +583,7 @@ impl Cache {
                                             )
                                         );
                                     // End here
-                                    return None;
+                                    None
                                 } else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
@@ -591,7 +591,7 @@ impl Cache {
                                         .join().unwrap().expect("Sqlite DB error");
                                     println!("Unregistered image. Retrying...");
                                     // Return song info object to facilitate recursive retry
-                                    return Some(song);
+                                    Some(song)
                                 }
                             }).map_ok(move |song_to_retry| {
                                 if let Some(song) = song_to_retry {
@@ -664,14 +664,14 @@ impl Cache {
                                     );
                                     let _ =
                                         fg_sender.send_blocking(ProviderMessage::CoverAvailable(folder_uri, thumbnail, tex));
-                                    return None;
+                                    None
                                 }
                                 else {
                                     // File no longer exists (maybe user had removed it). Unregister it from DB
                                     // and repeat process.
                                     sqlite::unregister_image_key(folder_uri.clone(), None, thumbnail)
                                         .join().unwrap().expect("Sqlite DB error");
-                                    return Some(album);
+                                    Some(album)
                                 }
                             }).map_ok(move |album_to_retry| {
                                 if let Some(album) = album_to_retry {
@@ -690,8 +690,7 @@ impl Cache {
         // cover of a song in this folder.
         let uri = &album.example_uri;
         if let Some(filename) = sqlite::find_image_by_key(uri, None, thumbnail)
-            .expect("Sqlite DB error")
-            .map_or(None, |name| if name.len() > 0 {Some(name)} else {None})
+            .expect("Sqlite DB error").and_then(|name| if !name.is_empty() {Some(name)} else {None})
         {
             if let Some(tex) = IMAGE_CACHE.lock().unwrap().get(&filename) {
                 // Cloning GObjects is cheap since they're just references
@@ -718,14 +717,14 @@ impl Cache {
                                 // Notify for this song. Albums whose folder contains this song should
                                 // catch wind of this too.
                                     fg_sender.send_blocking(ProviderMessage::CoverAvailable(uri, thumbnail, tex));
-                                return None;
+                                None
                             } else {
                                 // File no longer exists (maybe user had removed it). Unregister it from DB
                                 // and repeat process.
                                 sqlite::unregister_image_key(uri.clone(), None, thumbnail)
                                     .join().unwrap().expect("Sqlite DB error");
                                 println!("Unregistered image. Retrying...");
-                                return Some(album);
+                                Some(album)
                             }
                         }).map_ok(|album_to_retry| {
                             if let Some(album) = album_to_retry {
@@ -867,7 +866,7 @@ impl Cache {
             return None;
         }
         println!("{:?}", result.err());
-        return None;
+        None
     }
 
     pub fn fetch_album_meta(&self, album: &AlbumInfo, overwrite: bool) {
@@ -888,7 +887,7 @@ impl Cache {
             return None;
         }
         println!("{:?}", result.err());
-        return None;
+        None
     }
 
     pub fn fetch_artist_meta(&self, artist: &ArtistInfo, overwrite: bool) {
@@ -930,7 +929,7 @@ impl Cache {
                         if let Ok(tex) = Texture::from_filename(&path) {
                             IMAGE_CACHE.lock().unwrap().put(filename, tex.clone());
                             let _ = fg_sender.send_blocking(ProviderMessage::ArtistAvatarAvailable(artist.name.to_owned(), thumbnail, tex));
-                            return None;
+                            None
                         } else {
                             // File no longer exists (maybe user had removed it). Unregister it from DB
                             // and repeat process.
@@ -938,7 +937,7 @@ impl Cache {
                                 .join().unwrap().expect("Sqlite DB error");
                             println!("Unregistered image. Retrying...");
                             // Return song info object to facilitate recursive retry
-                            return Some(artist);
+                            Some(artist)
                         }
                     }).map_ok(move |artist_to_retry| {
                         if let Some(artist) = artist_to_retry {
@@ -1021,7 +1020,7 @@ impl Cache {
             return None;
         }
         println!("{:?}", result.err());
-        return None;
+        None
     }
 
     pub fn ensure_cached_lyrics(&self, song: &SongInfo) {

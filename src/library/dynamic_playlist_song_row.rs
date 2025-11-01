@@ -11,13 +11,13 @@ use crate::{
     utils::{format_secs_as_duration, strip_filename_linux},
 };
 
-use super::{Library, PlaylistContentView};
+use super::Library;
 
 mod imp {
     use std::cell::Cell;
 
-    use crate::{cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, library::PlaylistContentView};
-    use glib::{ParamSpec, ParamSpecBoolean, ParamSpecString};
+    use crate::cache::placeholders::{EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING};
+    use glib::{ParamSpec, ParamSpecString};
     use once_cell::sync::Lazy;
 
     use super::*;
@@ -216,11 +216,10 @@ impl DynamicPlaylistSongRow {
                                 // Force update since we might have been using a folder cover
                                 // temporarily
                                 this.update_thumbnail(tex, CoverSource::Embedded);
-                            } else if this.imp().thumbnail_source.get() != CoverSource::Embedded {
-                                if strip_filename_linux(song.get_uri()) == uri {
+                            } else if this.imp().thumbnail_source.get() != CoverSource::Embedded
+                                && strip_filename_linux(song.get_uri()) == uri {
                                     this.update_thumbnail(tex, CoverSource::Folder);
                                 }
-                            }
                         }
                     }
                 ),
@@ -240,7 +239,7 @@ impl DynamicPlaylistSongRow {
                                     }
                                 }
                                 CoverSource::Embedded => {
-                                    if song.get_uri() == &uri {
+                                    if song.get_uri() == uri {
                                         this.clear_thumbnail();
                                     }
                                 }
