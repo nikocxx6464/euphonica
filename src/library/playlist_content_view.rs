@@ -752,13 +752,13 @@ impl PlaylistContentView {
                     .chain_property::<Song>("artist")
                     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("duration")
                     .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
                         format_secs_as_duration(dur as f64)
                     }))
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
 
                 item.property_expression("item")
                     .chain_property::<Song>("quality-grade")
@@ -792,13 +792,13 @@ impl PlaylistContentView {
                     .chain_property::<Song>("artist")
                     .bind(&row, "second-attrib-text", gtk::Widget::NONE);
 
-                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("duration")
                     .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
                         format_secs_as_duration(dur as f64)
                     }))
-                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
 
                 item.property_expression("item")
                     .chain_property::<Song>("quality-grade")

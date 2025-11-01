@@ -14,9 +14,9 @@ use mpd::{
 
 use super::PlayerPane;
 
-use crate::{cache::Cache, client::ClientState, common::Song, utils::LazyInit, window::EuphonicaWindow};
+use crate::{cache::Cache, client::ClientState, common::{RowEditButtons, Song, SongRow}, player::controller::SwapDirection, utils::LazyInit, window::EuphonicaWindow};
 
-use super::{Player, QueueRow};
+use super::Player;
 
 mod imp {
     use std::{cell::{Cell, OnceCell}, sync::OnceLock};
@@ -220,7 +220,6 @@ impl QueueView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `QueueRow` during setup
         factory.connect_setup(clone!(
             #[weak]
             player,
@@ -230,29 +229,78 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let queue_row = QueueRow::new(item, player, cache);
-                item.set_child(Some(&queue_row));
+                let row = SongRow::new(Some(cache.clone()));
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowEditButtons::new(
+                    item,
+                    // Raise action
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.swap_dir(idx, SwapDirection::Up);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.swap_dir(idx, SwapDirection::Down);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.remove_pos(idx);
+                        }
+                    )
+                );
+                row.set_end_widget(Some(&end_widget.into()));
+                item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `QueueRow` to one of our Song GObjects
         factory.connect_bind(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, list_item| {
-                // Get `Song` from `ListItem` (that is, the data side)
-                let item: &ListItem = list_item
+                let item = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-
-
-                // Get `QueueRow` from `ListItem` (the UI widget)
-                let child: QueueRow = item
+                    .expect("Needs to be ListItem")
+                    .item()
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a common::Song.");
+                let child = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
                     .child()
-                    .and_downcast::<QueueRow>()
-                    .expect("The child has to be a `QueueRow`.");
+                    .and_downcast::<SongRow>()
+                    .expect("The child has to be a `SongRow`.");
 
                 // Within this binding fn is where the cached album art texture gets used.
-                child.bind(item);
+                child.on_bind(&item);
 
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
@@ -261,14 +309,13 @@ impl QueueView {
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
         factory.connect_unbind(move |_, list_item| {
-            // Get `QueueRow` from `ListItem` (the UI widget)
-            let child: QueueRow = list_item
+            let child = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<QueueRow>()
-                .expect("The child has to be a `QueueRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
+            child.on_unbind();
         });
 
         factory.connect_teardown(clone!(
