@@ -41,11 +41,10 @@
               <object class="GtkBox">
                 <property name="spacing">6</property>
                 <child>
-                  <object class="GtkLabel" id="name">
-                    <property name="halign">start</property>
-                    <property name="ellipsize">end</property>
+                  <object class="EuphonicaMarquee" id="name">
+                    <property name="speed">20</property>
                     <style>
-                      <class name="heading"/>
+                      <class name="heading" />
                     </style>
                   </object>
                 </child>

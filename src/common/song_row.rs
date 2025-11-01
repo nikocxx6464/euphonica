@@ -1,5 +1,6 @@
 use glib::{
     closure_local,
+    clone,
     Object,
     SignalHandlerId,
     ParamSpec,
@@ -16,7 +17,7 @@ use once_cell::sync::Lazy;
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{CoverSource, Song, SongInfo},
+    common::{CoverSource, Song, SongInfo, Marquee},
     utils::strip_filename_linux,
 };
 
@@ -38,7 +39,7 @@ mod imp {
         #[template_child]
         pub thumbnail: TemplateChild<gtk::Image>,
         #[template_child]
-        pub name: TemplateChild<gtk::Label>,
+        pub name: TemplateChild<Marquee>,
         #[template_child]
         pub first_attrib_icon: TemplateChild<gtk::Image>,
         #[template_child]
@@ -76,6 +77,28 @@ mod imp {
 
     // Trait shared by all GObjects
     impl ObjectImpl for SongRow {
+        fn constructed(&self) {
+            self.parent_constructed();
+
+            // Run marquee only while hovered
+            let hover_ctl = gtk::EventControllerMotion::new();
+            hover_ctl.set_propagation_phase(gtk::PropagationPhase::Capture);
+            hover_ctl.connect_enter(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_, _, _| {
+                    this.name.set_should_run_and_check(true);
+                }
+            ));
+            hover_ctl.connect_leave(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |_| {
+                    this.name.set_should_run_and_check(false);
+                }
+            ));
+            self.obj().add_controller(hover_ctl);
+        }
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
@@ -101,7 +124,7 @@ mod imp {
                 "index-visible" => self.thumbnail.is_visible().to_value(),
                 "index" => self.index.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
-                "name" => self.name.label().to_value(),
+                "name" => self.name.label().label().to_value(),
                 "quality-grade" => self.quality_grade.icon_name().to_value(),
                 "first-attrib-icon-name" => self.first_attrib_icon.icon_name().to_value(),
                 "second-attrib-icon-name" => self.second_attrib_icon.icon_name().to_value(),
@@ -134,7 +157,7 @@ mod imp {
                 }
                 "name" => {
                     if let Ok(name) = value.get::<&str>() {
-                        self.name.set_label(name);
+                        self.name.label().set_label(name);
                     }
                 }
                 "quality-grade" => {
@@ -306,7 +329,7 @@ impl SongRow {
     }
 
     pub fn set_name(&self, name: &str) {
-        self.imp().name.set_label(name);
+        self.imp().name.label().set_label(name);
     }
 
     pub fn set_thumbnail_visible(&self, vis: bool) {
