@@ -23,6 +23,7 @@
         <setter object="artist_view" property="collapsed">true</setter>
         <setter object="folder_view" property="collapsed">true</setter>
         <setter object="playlist_view" property="collapsed">true</setter>
+        <setter object="dyn_playlist_view" property="collapsed">true</setter>
         <setter object="queue_view" property="collapsed">true</setter>
         <setter object="queue_view" property="pane-collapsed">true</setter>
         <setter object="player_bar" property="collapsed">true</setter>
