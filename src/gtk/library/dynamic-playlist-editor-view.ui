@@ -91,7 +91,7 @@
             </child>
             <property name="child">
               <object class="GtkBox">
-                <property name="valign">start</property>
+                <property name="vexpand">true</property>
                 <property name="orientation">1</property>
                 <property name="hexpand">true</property>
                 <child>
@@ -124,38 +124,29 @@
                                 </style>
                                 <child>
                                   <object class="GtkImage" id="cover">
-                                    <property name="pixel-size">48</property>
+                                    <property name="pixel-size">36</property>  <!-- FIXME: find a better way than hardcoding Entry height with h3 style. -->
                                     <property name="resource">/io/github/htkhiem/Euphonica/albumart-placeholder.svg</property>
                                   </object>
                                 </child>
                               </object>
                             </child>
-
                             <child>
-                              <object class="GtkBox">
-                                <style>
-                                  <class name="linked"/>
-                                </style>
-                                <property name="orientation">1</property>
+                              <object class="GtkEntry" id="title">
+                                <property name="placeholder-text" translatable="true">Playlist name</property>
                                 <property name="hexpand">true</property>
-                                <child>
-                                  <object class="GtkEntry" id="title">
-                                    <property name="placeholder-text" translatable="true">Playlist name</property>
-                                    <style>
-                                      <class name="title-2"/>
-                                      <class name="error"/> <!-- Upon creation the title is empty which is invalid -->
-                                    </style>
-                                  </object>
-                                </child>
-                                <child>
-                                  <object class="GtkEntry" id="description">
-                                    <property name="placeholder-text" translatable="true">Description</property>
-                                  </object>
-                                </child>
+                                <style>
+                                  <class name="title-2"/>
+                                  <class name="error"/> <!-- Upon creation the title is empty which is invalid -->
+                                </style>
                               </object>
                             </child>
                           </object>
                         </child>
+
+                        <child>
+                          <object class="GtkSeparator"/>
+                        </child>
+
                         <child>
                           <object class="GtkBox">
                             <property name="orientation">1</property>
@@ -164,9 +155,9 @@
                             <child>
                               <object class="GtkScrolledWindow">
                                 <property name="propagate-natural-height">true</property>
-                                <property name="vexpand">true</property>
                                 <child>
                                   <object class="AdwWrapBox" id="rules_box">
+                                    <property name="valign">start</property>
                                     <property name="hexpand">true</property>
                                     <property name="child-spacing">6</property>
                                     <property name="line-spacing">6</property>
@@ -202,9 +193,9 @@
                             <child>
                               <object class="GtkScrolledWindow">
                                 <property name="propagate-natural-height">true</property>
-                                <property name="vexpand">true</property>
                                 <child>
                                   <object class="AdwWrapBox" id="ordering_box">
+                                    <property name="valign">start</property>
                                     <property name="hexpand">true</property>
                                     <property name="child-spacing">6</property>
                                     <property name="line-spacing">6</property>

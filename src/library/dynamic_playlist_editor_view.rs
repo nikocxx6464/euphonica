@@ -65,8 +65,6 @@ mod imp {
         #[template_child]
         pub title: TemplateChild<gtk::Entry>,
         #[template_child]
-        pub description: TemplateChild<gtk::Entry>,
-        #[template_child]
         pub add_rule_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub rules_box: TemplateChild<adw::WrapBox>,
@@ -98,7 +96,6 @@ mod imp {
         pub content_pages: TemplateChild<gtk::Stack>,
         #[template_child]
         pub content: TemplateChild<gtk::ListView>,
-
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         pub orderings_menu: gio::Menu,
@@ -146,19 +143,13 @@ mod imp {
         fn constructed(&self) {
             self.parent_constructed();
 
+            // self.cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
+
             self.title.connect_changed(clone!(
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
                     this.obj().validate_title();
-                }
-            ));
-
-            self.description.connect_changed(clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_| {
-                    this.obj().on_change();
                 }
             ));
 
@@ -414,7 +405,6 @@ impl DynamicPlaylistEditorView {
         client_state: ClientState,
         window: &EuphonicaWindow
     ) {
-        let cache_state = cache.get_cache_state();
         self.imp()
            .cache
            .set(cache.clone())
@@ -460,53 +450,6 @@ impl DynamicPlaylistEditorView {
                 }
             }
         ));
-
-        cache_state.connect_closure(
-            "playlist-cover-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                    if !thumb {
-                        return;
-                    }
-                    // Match by old name if editing an existing playlist
-                    if let Some(old_name) = this.imp().editing_name.borrow().as_ref() {
-                        if name.as_str() == old_name {
-                            this.imp().cover_action.replace(ImageAction::Existing(true));
-                            this.imp().cover.set_paintable(Some(&tex));
-                        }
-                    }
-                }
-            )
-        );
-
-        // cache_state.connect_closure(
-        //     "album-art-cleared",
-        //     false,
-        //     closure_local!(
-        //         #[weak(rename_to = this)]
-        //         self,
-        //         move |_: CacheState, uri: String| {
-        //             if let Some(album) = this.imp().album.borrow().as_ref() {
-        //                 match this.imp().cover_source.get() {
-        //                     CoverSource::Folder => {
-        //                         if album.get_folder_uri() == &uri {
-        //                             this.clear_cover();
-        //                         }
-        //                     }
-        //                     CoverSource::Embedded => {
-        //                         if album.get_example_uri() == &uri {
-        //                             this.clear_cover();
-        //                         }
-        //                     }
-        //                     _ => {}
-        //                 }
-        //             }
-        //         }
-        //     ),
-        // );
 
         client_state.connect_closure(
             "dynamic-playlist-songs-downloaded",
@@ -750,7 +693,7 @@ impl DynamicPlaylistEditorView {
             path
         }).expect("Path must be in UTF-8").into_owned();
         self.imp().cover_action.replace(ImageAction::New(filepath.clone()));
-        self.imp().cover.set_from_file(Some(filepath));
+        self.imp().cover.set_from_file(Some(filepath));  // FIXME: use libglycin
         self.on_change();
     }
 
@@ -847,7 +790,6 @@ impl DynamicPlaylistEditorView {
 
         DynamicPlaylist {
             name: self.imp().title.text().to_string(),
-            description: self.imp().description.text().to_string(),
             last_queued: None,
             play_count: 0,
             rules,

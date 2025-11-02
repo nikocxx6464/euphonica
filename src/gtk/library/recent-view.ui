@@ -8,6 +8,7 @@
           <object class="AdwNavigationPage">
             <child>
               <object class="AdwToolbarView">
+                <property name="title">Recents</property>
                 <child type="top">
                   <object class="AdwHeaderBar">
                     <property name="show-title">false</property>

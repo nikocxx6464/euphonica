@@ -41,7 +41,6 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
             3 => {
                 conn.execute_batch("create table if not exists `queries` (
     `name` VARCHAR not null,
-    `description` VARCHAR not null,
     `cover_name` VARCHAR null,
     `last_modified` DATETIME not null,
     `last_queued` DATETIME null,
@@ -231,7 +230,6 @@ create unique index if not exists `image_key` on `images` (
 
 create table if not exists `queries` (
     `name` VARCHAR not null,
-    `description` VARCHAR not null,
     `cover_name` VARCHAR null,
     `last_modified` DATETIME not null,
     `last_queued` DATETIME null,
@@ -823,11 +821,10 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str
 
     tx.execute(
         "insert into queries
-(name, description, last_modified, last_queued, play_count, bson, auto_refresh, last_refresh, `limit`)
-values (?1,?2,?3,?4,?5,?6,?7,?8,?9)",
+(name, last_modified, last_queued, play_count, bson, auto_refresh, last_refresh, `limit`)
+values (?1,?2,?3,?4,?5,?6,?7,?8)",
         params![
             &dp.name,
-            &dp.description,
             OffsetDateTime::now_utc(),
             last_queued,
             &dp.play_count,

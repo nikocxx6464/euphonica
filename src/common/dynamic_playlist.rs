@@ -260,7 +260,6 @@ pub enum Rule {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DynamicPlaylist {
     pub name: String,
-    pub description: String,
     pub last_queued: Option<i64>,
     pub play_count: usize,
     pub rules: Vec<Rule>,

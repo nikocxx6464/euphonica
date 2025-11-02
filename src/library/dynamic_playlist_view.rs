@@ -201,8 +201,17 @@ impl DynamicPlaylistView {
             .connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
+                #[weak]
+                library,
+                #[weak]
+                cache,
+                #[weak]
+                client_state,
+                #[weak]
+                window,
                 move |_| {
                     let editor = DynamicPlaylistEditorView::default();
+                    editor.setup(library, cache, client_state, &window);
                     editor.connect_closure(
                         "exit-clicked",
                         false,

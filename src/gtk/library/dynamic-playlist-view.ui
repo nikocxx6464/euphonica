@@ -6,6 +6,7 @@
       <object class="AdwNavigationView" id="nav_view">
         <child>
           <object class="AdwNavigationPage">
+            <property name="title">Dynamic Playlists</property>
             <property name="tag">list</property>
             <child>
               <object class="AdwToolbarView">

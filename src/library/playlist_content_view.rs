@@ -10,7 +10,7 @@ use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
 use super::Library;
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache},
     client::ClientState,
     common::{RowEditButtons, INode, RowAddButtons, Song, SongRow},
     utils::format_secs_as_duration,
