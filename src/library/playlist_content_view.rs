@@ -508,39 +508,6 @@ impl PlaylistContentView {
         ));
 
         let cache_state = cache.get_cache_state();
-        cache_state.connect_closure(
-            "playlist-cover-downloaded",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                    if thumb {
-                        return;
-                    }
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if name.as_str() == playlist.get_uri() {
-                            this.update_cover(&tex);
-                        }
-                    }
-                }
-            )
-        );
-        cache_state.connect_closure(
-            "playlist-cover-cleared",
-            false,
-            closure_local!(
-                #[weak(rename_to = this)]
-                self,
-                move |_: CacheState, name: String| {
-                    if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        if name.as_str() == playlist.get_uri() {
-                            this.clear_cover();
-                        }
-                    }
-                }
-            ),
-        );
         self.imp()
             .window
             .set(window.clone())
@@ -951,20 +918,6 @@ impl PlaylistContentView {
         // Save binding
         bindings.push(title_binding);
 
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_playlist_cover(playlist.get_uri(), false)
-            .as_ref() {
-                self.update_cover(tex);
-            }
-        else {
-            self.clear_cover();
-        }
-
         let last_mod_binding = playlist
             .bind_property("last-modified", &last_mod_label, "label")
             .sync_create()
@@ -972,7 +925,22 @@ impl PlaylistContentView {
         // Save binding
         bindings.push(last_mod_binding);
 
-        // self.update_cover();
+        // Fetch high resolution playlist cover
+        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
+            &playlist.get_uri(), false, false
+        );
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Some(tex) = handle.await.unwrap() {
+                    this.update_cover(&tex);
+                } else {
+                    this.clear_cover();
+                }
+            }
+        ));
+
         self.imp().playlist.borrow_mut().replace(playlist);
     }
 

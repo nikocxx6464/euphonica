@@ -475,7 +475,7 @@ impl PlaylistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = PlaylistRow::new(library, item, cache);
+                let folder_row = PlaylistRow::new(false, library, item, cache);
                 item.set_child(Some(&folder_row));
             }
         ));

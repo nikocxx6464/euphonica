@@ -763,16 +763,21 @@ impl DynamicPlaylistEditorView {
     fn schedule_existing_cover(&self, dp: &DynamicPlaylist) {
         self.imp().cover_action.replace(ImageAction::Existing(false)); // for now
         self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_playlist_cover(&dp.name, false) {
-                self.imp().cover_action.replace(ImageAction::Existing(true));
-                self.imp().cover.set_paintable(Some(&tex));
+
+        // Fetch high resolution playlist cover
+        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
+            &dp.name, true, false
+        );
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Some(tex) = handle.await.unwrap() {
+                    this.imp().cover_action.replace(ImageAction::Existing(true));
+                    this.imp().cover.set_paintable(Some(&tex));
+                }
             }
+        ));
     }
 
     fn get_refresh_schedule(&self) -> AutoRefresh {

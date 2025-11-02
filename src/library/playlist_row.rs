@@ -1,9 +1,10 @@
 use glib::{clone, closure_local, Object, SignalHandlerId, ParamSpec, ParamSpecString};
 use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     rc::Rc,
 };
+use once_cell::sync::Lazy;
 
 use crate::{
     cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
@@ -14,7 +15,6 @@ use super::Library;
 
 mod imp {
     use super::*;
-    use once_cell::sync::Lazy;
 
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-row.ui")]
@@ -33,9 +33,9 @@ mod imp {
         // pub duration: TemplateChild<gtk::Label>,
         #[template_child]
         pub last_modified: TemplateChild<gtk::Label>,
-        pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
         pub library: OnceCell<Library>,
         pub playlist: RefCell<Option<INode>>,
+        pub is_dynamic: Cell<bool>,
         pub cache: OnceCell<Rc<Cache>>
     }
 
@@ -94,14 +94,6 @@ mod imp {
                 _ => unimplemented!(),
             }
         }
-
-        fn dispose(&self) {
-            if let Some((set_id, clear_id)) = self.thumbnail_signal_ids.take() {
-                let cache_state = self.cache.get().unwrap().get_cache_state();
-                cache_state.disconnect(set_id);
-                cache_state.disconnect(clear_id);
-            }
-        }
     }
 
     // Trait shared by all widgets
@@ -118,15 +110,17 @@ glib::wrapper! {
 }
 
 impl PlaylistRow {
-    pub fn new(library: Library, item: &gtk::ListItem, cache: Rc<Cache>) -> Self {
+    pub fn new(
+        is_dynamic: bool, library: Library, item: &gtk::ListItem, cache: Rc<Cache>
+    ) -> Self {
         let res: Self = Object::builder().build();
+        res.imp().is_dynamic.set(is_dynamic);
         res.setup(library, item, cache);
         res
     }
 
     #[inline(always)]
     pub fn setup(&self, library: Library, item: &gtk::ListItem, cache: Rc<Cache>) {
-        let cache_state = cache.get_cache_state();
         self.imp()
            .cache
            .set(cache)
@@ -139,42 +133,6 @@ impl PlaylistRow {
         item.property_expression("item")
             .chain_property::<INode>("last-modified")
             .bind(self, "last-modified", gtk::Widget::NONE);
-
-        let _ = self.imp().thumbnail_signal_ids.replace(Some((
-            cache_state.connect_closure(
-                "playlist-cover-downloaded",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_: CacheState, name: String, thumb: bool, tex: gdk::Texture| {
-                        if !thumb {
-                            return;
-                        }
-                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                            if name.as_str() == playlist.get_uri() {
-                                this.update_thumbnail(&tex);
-                            }
-                        }
-                    }
-                ),
-            ),
-            cache_state.connect_closure(
-                "playlist-cover-cleared",
-                false,
-                closure_local!(
-                    #[weak(rename_to = this)]
-                    self,
-                    move |_: CacheState, name: String| {
-                        if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                            if name.as_str() == playlist.get_uri() {
-                                this.clear_thumbnail();
-                            }
-                        }
-                    }
-                ),
-            ),
-        )));
 
         self.imp().replace_queue.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -207,15 +165,19 @@ impl PlaylistRow {
 
     fn schedule_thumbnail(&self, playlist: &INodeInfo) {
         self.imp().thumbnail.set_paintable(Some(&*ALBUMART_THUMBNAIL_PLACEHOLDER));
-        if let Some(tex) = self
-            .imp()
-            .cache
-            .get()
-            .unwrap()
-            .clone()
-            .load_cached_playlist_cover(&playlist.uri, true) {
-                self.imp().thumbnail.set_paintable(Some(&tex));
+        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
+            &playlist.uri, self.imp().is_dynamic.get(), true
+        );
+
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Some(tex) = handle.await.unwrap() {
+                    this.imp().thumbnail.set_paintable(Some(&tex));
+                }
             }
+        ));
     }
 
     fn update_thumbnail(&self, tex: &gdk::Texture) {

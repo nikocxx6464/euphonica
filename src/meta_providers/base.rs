@@ -16,7 +16,6 @@ pub fn sleep_after_request() {
 /// Enum for communication with provider threads from the cache controller living on the main thread.
 /// Can be used for both request and response.
 pub enum ProviderMessage {
-    FolderCoverCleared(String),
     // EmbeddedCover(SongInfo),
     FolderCover(AlbumInfo), // Pass through the fallback parameter
     CoverAvailable(String, bool, gdk::Texture), // URI (can be track or folder), is_thumbnail, the texture itself
@@ -27,20 +26,14 @@ pub enum ProviderMessage {
     FetchFolderCoverExternally(AlbumInfo), // Pass through the fallback parameter
     AlbumMeta(AlbumInfo, bool), // if true, skip check (for overwriting)
     AlbumMetaAvailable(String), // Only return URI
-    ArtistAvatarCleared(String), // Only need name
     /// Both request and positive response
     ArtistAvatar(ArtistInfo), // With cache basepath
     ArtistAvatarAvailable(String, bool, gdk::Texture), // Name, is_thumbnail, the texture itself
-    PlaylistCover(String),
-    PlaylistCoverAvailable(String, bool, gdk::Texture),
-    PlaylistCoverCleared(String),
     /// Both request and positive response. Includes downloading artist avatar.
     ArtistMeta(ArtistInfo, bool), // If bool is true, skip check (for overwriting)
     ArtistMetaAvailable(String), // Only return name
     Lyrics(SongInfo),
     LyricsAvailable(String), // Only return full URI
-    DynamicPlaylistSaved,    // No need for name as there is only ever one DP being edited at any time
-    DynamicPlaylistDeleted
 }
 
 /// Common provider-agnostic utilities.
