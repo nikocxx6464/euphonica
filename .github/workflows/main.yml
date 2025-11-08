@@ -12,13 +12,19 @@ jobs:
     container:
       image: debian:sid-slim # Unstable branch for maximum GTK version
       options: --user root
-
     steps:
+    - name: ⚙️ Install Build Dependencies (Debian Sid)
+      run: |
+        # Update package lists
+        apt-get update
+        apt-get install sudo git wget curl jq
+        
     - name: ⬇️ Checkout Repository
       uses: actions/checkout@v4
       with:
         repository: 'htkhiem/euphonica'
-
+        submodules: 'recursive'
+        
     - name: 🦀 Install Rust Toolchain
       uses: dtolnay/rust-toolchain@stable
       with:
