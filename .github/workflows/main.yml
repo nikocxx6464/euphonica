@@ -1,0 +1,78 @@
+name: Build Euphonica AArch64 DEB
+
+on:
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  build_arm64_deb:
+    # Use the dedicated ARM64 runner
+    runs-on: ubuntu-24.04-arm
+
+    steps:
+    - name: ⬇️ Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        repository: 'htkhiem/euphonica'
+        submodules: 'recursive'
+
+    - name: 🦀 Install Rust Toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: stable
+        
+    - name: ⚙️ Install Build Dependencies (FINAL)
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          git \
+          meson \
+          ninja-build \
+          pkg-config \
+          libdbus-1-dev \
+          libgtk-4-dev \
+          libadwaita-1-dev \
+          libpipewire-0.3-dev \
+          libsqlite3-dev \
+          libssl-dev \
+          libsecret-1-dev \
+          gettext \
+          clang \
+          xdg-desktop-portal-gtk \
+          libdconf-dev \
+          libmpdclient-dev # <-- THE MISSING DEPENDENCY
+
+    - name: 🔨 Configure Meson Build
+      run: |
+        meson setup build --buildtype=release --prefix=/usr
+
+    - name: 📦 Compile and Stage Install
+      run: |
+        ninja -C build
+        DESTDIR=./package meson install -C build
+
+    - name: 🎁 Create DEB Package (FINAL)
+      run: |
+        # Create the necessary DEBIAN control file directory
+        mkdir -p ./package/DEBIAN
+
+        # --- Use echo to stably create the multiline control file ---
+        # Note: The date command uses a stable shell sub-shell
+        CONTROL_FILE="./package/DEBIAN/control"
+        
+        echo "Package: euphonica" > $CONTROL_FILE
+        echo "Version: 1.0.0-git-latest" >> $CONTROL_FILE
+        echo "Architecture: arm64" >> $CONTROL_FILE
+        echo "Maintainer: None <no@email.com>" >> $CONTROL_FILE
+        echo "Description: Euphonica MPD Client" >> $CONTROL_FILE
+        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2" >> $CONTROL_FILE
+        
+        # Build the final .deb package
+        dpkg-deb --build ./package
+
+        
+    - name: ⬆️ Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: euphonica-arm64-deb
+        path: package.deb
