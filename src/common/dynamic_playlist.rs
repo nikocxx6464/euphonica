@@ -184,7 +184,7 @@ impl StickerOperation {
 
 /// Flattened, no-lifetime version of mpd::search::Term * mpd::search::Operation,
 /// only containing supported tag types.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone, Copy)]
 pub enum QueryLhs {
     File,    // matches full song URI, always ==
     Base,    // from this directory
@@ -226,7 +226,7 @@ impl<'a, 'b: 'a> QueryLhs {
     }
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum Rule {
     /// Entity type (song, album, etc), LHS (key), operator, RHS (always a string)
     Sticker(StickerObjectType, String, StickerOperation, String),
@@ -257,7 +257,7 @@ pub enum Rule {
 /// can be added later.
 /// sticker conditions. To query a DP, we perform an intersection between sets of URIs
 /// returned by the query and each of the sticker conditions.
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Serialize, Deserialize, Clone)]
 pub struct DynamicPlaylist {
     pub name: String,
     pub last_queued: Option<i64>,

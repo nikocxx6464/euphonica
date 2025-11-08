@@ -2,7 +2,7 @@ use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
 use glib::{clone, closure_local};
-use gtk::{gio, glib, gdk, CompositeTemplate, ListItem, SignalListItemFactory};
+use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
 use uuid::Uuid;
 use std::{
     cell::{OnceCell, RefCell},
@@ -14,7 +14,7 @@ use strum::{EnumCount, IntoEnumIterator, VariantArray};
 
 use crate::{
     cache::{
-        placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache, CacheState, ImageAction
+        placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache, ImageAction
     },
     client::ClientState,
     common::{
@@ -759,7 +759,8 @@ impl DynamicPlaylistEditorView {
 
         println!("{:?}", &dp);
 
-        self.imp().library.get().unwrap().fetch_dynamic_playlist(dp, false, false);
+        // Don't cache as this DP is still being edited
+        self.imp().library.get().unwrap().fetch_dynamic_playlist(dp, false);
     }
 
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {

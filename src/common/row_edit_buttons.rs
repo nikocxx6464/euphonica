@@ -57,7 +57,7 @@ impl RowEditButtons {
         on_raise_clicked: F1,
         on_lower_clicked: F2,
         on_remove_clicked: F3
-    ) -> Self where F1: Fn(u32) -> () + 'static, F2: Fn(u32) -> () + 'static, F3: Fn(u32) -> () + 'static {
+    ) -> Self where F1: Fn(u32) + 'static, F2: Fn(u32) + 'static, F3: Fn(u32) + 'static {
         let res: Self = Object::builder().build();
         res.imp().raise.connect_clicked(clone!(
             #[weak]

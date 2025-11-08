@@ -535,7 +535,6 @@ impl ArtistContentView {
                 item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `SongRow` to one of our Artist GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
             let item: Song = list_item

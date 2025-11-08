@@ -475,7 +475,7 @@ impl RecentView {
                 row.set_third_attrib_text(song.get_last_played_desc().as_deref());
 
                 let end_widget = RowAddButtons::new(&library);
-                end_widget.set_song(Some(&song));
+                end_widget.set_song(Some(song));
                 row.set_end_widget(Some(&end_widget.into()));
 
                 row.on_bind(song);

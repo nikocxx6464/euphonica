@@ -16,6 +16,7 @@ mod playlist_view;
 mod playlist_row;
 
 mod dynamic_playlist_view;
+mod dynamic_playlist_content_view;
 mod dynamic_playlist_editor_view;
 mod rule_button;
 mod ordering_button;

@@ -1,0 +1,254 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaDynamicPlaylistContentView" parent="GtkWidget">
+    <child>
+      <object class="AdwBreakpointBin">
+        <property name="width-request">240</property>
+        <property name="height-request">240</property>
+        <child>
+          <object class="AdwBreakpoint">
+            <condition>max-width: 550px</condition>
+            <setter object="infobox" property="orientation">1</setter>
+            <setter object="cover" property="pixel-size">128</setter>
+            <setter object="replace_queue_text" property="visible">false</setter>
+            <setter object="add_to_playlist" property="collapsed">true</setter>
+
+            <setter object="title" property="halign">fill</setter>
+            <setter object="title" property="justify">center</setter>
+            <setter object="artists_box" property="halign">center</setter>
+            <setter object="rating_box" property="halign">center</setter>
+            <setter object="metadata_box" property="halign">center</setter>
+          </object>
+        </child>
+        <property name="child">
+          <object class="EuphonicaContentView" id="inner">
+            <!-- <property name="header-end-widget"> -->
+            <!--   <object class="GtkMenuButton" id="edit_menu"> -->
+            <!--     <property name="menu-model">edit_menu_model</property> -->
+            <!--     <property name="icon-name">view-more-symbolic</property> -->
+            <!--   </object> -->
+            <!-- </property> -->
+            <property name="infobox-widget">
+              <object class="GtkBox" id="infobox">
+                <property name="spacing">12</property>
+                <child>
+                  <object class="GtkBox">
+                    <property name="halign">3</property>
+                    <property name="valign">3</property>
+                    <property name="overflow">hidden</property>
+                    <style>
+                      <class name="border-radius-6" />
+                    </style>
+                    <child>
+                      <object class="GtkImage" id="cover">
+                        <property name="pixel-size">256</property>
+                        <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder.png</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkBox" id="infobox_text">
+                    <property name="orientation">1</property>
+                    <property name="spacing">6</property>
+                    <child>
+                      <object class="GtkLabel" id="title">
+                        <property name="halign">start</property>
+                        <property name="wrap">true</property>
+                        <property name="justify">left</property>
+                        <property name="ellipsize">end</property>
+                        <property name="label">Untitled Playlist</property>
+                        <style>
+                          <class name="title-2"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkSeparator">
+                        <style>
+                          <class name="spacer"/>
+                        </style>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkBox" id="metadata_box">
+                        <property name="spacing">12</property>
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Last modified</property>
+                                <style>
+                                  <class name="caption-heading"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="last_mod">
+                                <property name="label">-</property>
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Tracks</property>
+                                <style>
+                                  <class name="caption-heading"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="track_count">
+                                <property name="label">-</property>
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Runtime</property>
+                                <style>
+                                  <class name="caption-heading"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="runtime">
+                                <property name="label">-</property>
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+            <property name="action-row-start-widget">
+              <object class="GtkBox" id="action_btns">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="GtkButton" id="replace_queue">
+                    <property name="tooltip-text" translatable="true">Replace the queue with this dynamic playlist's current state</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">play-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Play</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                    <style>
+                      <class name="suggested-action"/>
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="append_queue">
+                    <property name="tooltip-text" translatable="true">Add selected songs to the end of the queue</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">list-add-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel">
+                            <property name="label" translatable="true">Queue</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkButton" id="edit_playlist">
+                    <property name="tooltip-text" translatable="true">Edit this dynamic playlist's rules</property>
+                    <child>
+                      <object class="GtkBox">
+                        <property name="spacing">6</property>
+                        <child>
+                          <object class="GtkImage">
+                            <property name="icon-name">document-edit-symbolic</property>
+                          </object>
+                        </child>
+                        <child>
+                          <object class="GtkLabel" id="edit_text">
+                            <property name="label" translatable="true">Edit</property>
+                          </object>
+                        </child>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </property>
+            <property name="action-row-end-widget">
+              <object class="GtkButton" id="refresh_btn">
+                <property name="label" translatable="true">Refresh</property>
+                <style>
+                  <class name="suggested-action"/>
+                </style>
+              </object>
+            </property>
+            <property name="content">
+              <object class="GtkStack" id="content_spinner">
+                <child>
+                  <object class="GtkStackPage">
+                    <property name="name">spinner</property>
+                    <property name="child">
+                      <object class="AdwSpinner"/>
+                    </property>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkStackPage">
+                    <property name="name">content</property>
+                    <property name="child">
+                      <object class="GtkListView" id="content">
+                        <property name="show-separators">true</property>
+                        <style>
+                          <class name="no-bg"/>
+                        </style>
+                      </object>
+                    </property>
+                  </object>
+                </child>
+              </object>
+            </property>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

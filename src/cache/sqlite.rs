@@ -1,16 +1,16 @@
 extern crate bson;
 extern crate rusqlite;
 
-use std::io::Cursor;
+use std::{io::Cursor, str::FromStr};
 
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{params, Error as SqliteError, Result, Row};
+use rusqlite::{params, Error as SqliteError, OptionalExtension, Result, Row};
 use time::OffsetDateTime;
 use glib::{ThreadPool, ThreadHandle};
 
 use crate::{
-    common::{inode::INodeInfo, AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType, SongInfo},
+    common::{dynamic_playlist::{AutoRefresh, Ordering, Rule}, inode::INodeInfo, AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType, SongInfo},
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
     utils::{format_datetime_local_tz, strip_filename_linux},
 };
@@ -49,12 +49,18 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
     `last_refresh` DATETIME null,
     `auto_refresh` VARCHAR not null,
     `limit` INTEGER null,
-
     primary key(`name`)
 );
-
 create unique index if not exists `query_key` on `queries` (
     `name`
+);
+
+create table if not exists `query_results` (
+    `query_name` VARCHAR not null,
+    `uri` VARCHAR not null
+);
+create unique index if not exists `query_results_key` on `query_results` (
+    `query_name`
 );
 
 pragma user_version = 4;").expect("Unable to migrate DB version 3 to 4");
@@ -240,9 +246,16 @@ create table if not exists `queries` (
     `limit` INTEGER null,
     primary key(`name`)
 );
-
 create unique index if not exists `query_key` on `queries` (
     `name`
+);
+
+create table if not exists `query_results` (
+    `query_name` VARCHAR not null,
+    `uri` VARCHAR not null
+);
+create unique index if not exists `query_results_key` on `query_results` (
+    `query_name`
 );
 
 pragma journal_mode=WAL;
@@ -269,6 +282,12 @@ pub enum Error {
     DbError(SqliteError),
     InsufficientKey,
     KeyAlreadyExists
+}
+
+impl From<SqliteError> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::DbError(value)
+    }
 }
 
 pub struct AlbumMetaRow {
@@ -776,18 +795,17 @@ pub fn exists_dynamic_playlist(name: &str) -> Result<bool, Error> {
     let mut query = conn
         .prepare("select count(name) from queries where name = ?1")
         .unwrap();
-    Ok(
-        query
-        .query_map(params![name], |r| r.get::<usize, usize>(0))
-        .map_err(Error::DbError)?
-        .map(|r| r.unwrap())
-        .collect::<Vec<usize>>()[0] > 0
-    )
+    match query
+        .query_one(params![name], |r| r.get::<usize, usize>(0)) {
+            Ok(count) => Ok(count > 0),
+            Err(SqliteError::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(Error::DbError(e))
+        }
 }
 
 pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str>) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(Error::DbError)?;
+    let tx = conn.transaction()?;
 
     if let Some(to_overwrite) = overwrite_name {
         // This allows us to both edit and rename an existing DP in one call
@@ -838,8 +856,92 @@ values (?1,?2,?3,?4,?5,?6,?7,?8)",
             last_refresh,
             &dp.limit
         ]
-    ).map_err(Error::DbError)?;
+    )?;
 
-    tx.commit().map_err(Error::DbError)?;
+    tx.commit()?;
     Ok(())
+}
+
+pub fn cache_dynamic_playlist_results(
+    name: &str,
+    songs: &[SongInfo],
+) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction()?;
+
+    //
+    // Remove the previous result
+    tx.execute(
+        "delete from query_results where query_name = ?1",
+        params![name]
+    )?;
+    for song in songs.iter() {
+        tx.execute(
+            "insert into query_results (query_name, uri) values (?1,?2)",
+            params![
+                name,
+                song.uri
+            ]
+        )?;
+    }
+    // Update last_refresh
+    tx.execute(
+        "update queries set last_refresh = ?1 where name = ?2",
+        params![
+            OffsetDateTime::now_utc(),
+            name
+        ]
+    );
+
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn get_dynamic_playlist_info(
+    name: &str
+) -> Result<Option<DynamicPlaylist>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select
+bson, name, last_queued, play_count, auto_refresh, last_refresh, `limit`
+from queries where name = ?1"
+        )
+        .unwrap();
+
+    query
+        .query_one(params![name], |r| {
+            let mut reader = Cursor::new(r.get::<usize, Vec<u8>>(0)?);
+            let mut rules_and_ordering = bson::Document
+                ::from_reader(&mut reader)
+                .unwrap();
+            Ok(DynamicPlaylist {
+                name: r.get::<usize, String>(1)?,
+                last_queued: r.get::<usize, Option<OffsetDateTime>>(2)?.map(|ts| ts.unix_timestamp()),
+                play_count: r.get::<usize, usize>(3)?,
+                rules: bson::deserialize_from_bson::<Vec<Rule>>(
+                    std::mem::take(rules_and_ordering.get_mut("rules").unwrap())
+                ).unwrap(),
+                ordering: bson::deserialize_from_bson::<Vec<Ordering>>(
+                    std::mem::take(rules_and_ordering.get_mut("ordering").unwrap())
+                ).unwrap(),
+                auto_refresh: AutoRefresh::from_str(&r.get::<usize, String>(4)?).unwrap(),
+                last_refresh: r.get::<usize, Option<OffsetDateTime>>(5)?.map(|ts| ts.unix_timestamp()),
+                limit: r.get::<usize, Option<u32>>(6)?
+            })
+        }).optional().map_err(Error::DbError)
+}
+
+pub fn get_cached_dynamic_playlist_results(
+    name: &str
+) -> Result<Vec<String>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select uri from query_results where query_name = ?1")
+        .unwrap();
+    Ok(
+        query
+        .query_map(params![name], |r| r.get::<usize, String>(0))?
+        .map(|r| r.unwrap())
+        .collect::<Vec<String>>()
+    )
 }

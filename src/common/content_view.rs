@@ -1,21 +1,8 @@
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, ParamSpec, ParamSpecObject};
-use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
-use std::{
-    cell::{Cell, OnceCell, RefCell},
-    rc::Rc,
-};
+use glib::{ParamSpec, ParamSpecObject};
+use gtk::{glib, prelude::*, CompositeTemplate};
 use once_cell::sync::Lazy;
-use time::{format_description, Date};
 use derivative::Derivative;
-use crate::{
-    utils,
-    cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
-    client::{state::StickersSupportLevel, ClientState},
-    common::{Album, AlbumInfo, Artist, CoverSource, Rating, RowAddButtons, Song, SongRow},
-    utils::format_secs_as_duration
-};
-use async_channel::Sender;
 
 mod imp {
     use super::*;

@@ -610,9 +610,26 @@ impl Library {
     }
 
     /// Retrieve songs in a dynamic playlist
-    pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, queue: bool, play: bool) {
+    pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, cache: bool) {
         self.client().queue_background(
-            BackgroundTask::FetchDynamicPlaylistSongs(dp, queue, play), true
+            BackgroundTask::FetchDynamicPlaylistSongs(dp, cache), true
+        );
+    }
+
+    /// Retrieve last cached state of a dynamic playlist
+    pub fn fetch_cached_dynamic_playlist(&self, name: &str) {
+        self.client().queue_background(
+            BackgroundTask::FetchCachedDynamicPlaylistSongs(name.to_string()), true
+        );
+    }
+
+    /// Get last cached results of a dynamic playlist
+    pub fn queue_cached_dynamic_playlist(&self, name: &str, replace: bool, play: bool) {
+        if replace {
+            self.client().clear_queue();
+        }
+        self.client().queue_background(
+            BackgroundTask::QueueDynamicPlaylist(name.to_string(), play), true
         );
     }
 

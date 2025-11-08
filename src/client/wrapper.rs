@@ -306,8 +306,14 @@ impl MpdWrapper {
                         BackgroundTask::QueuePlaylist(name, play_from) => {
                             background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
                         }
-                        BackgroundTask::FetchDynamicPlaylistSongs(dp, queue, play) => {
-                            background::fetch_dynamic_playlist(&mut client, &sender_to_fg, dp, queue, play);
+                        BackgroundTask::FetchDynamicPlaylistSongs(dp, cache) => {
+                            background::fetch_dynamic_playlist(&mut client, &sender_to_fg, dp, cache);
+                        }
+                        BackgroundTask::FetchCachedDynamicPlaylistSongs(name) => {
+                            background::fetch_dynamic_playlist_cached(&mut client, &sender_to_fg, &name);
+                        }
+                        BackgroundTask::QueueDynamicPlaylist(name, play) => {
+                            background::queue_cached_dynamic_playlist(&mut client, &sender_to_fg, &name, play);
                         }
                     }
                 } else {

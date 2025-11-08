@@ -1216,13 +1216,8 @@ pub fn fetch_dynamic_playlist(
     client: &mut mpd::Client<stream::StreamWrapper>,
     sender_to_fg: &Sender<AsyncClientMessage>,
     dp: DynamicPlaylist,
-    queue: bool,  // If true, will queue instead of replying with SongInfos
-    play: bool
+    cache: bool  // If true, will cache resolved song URIs locally
 ) {
-    if queue {
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-    }
-
     // To reduce server & connection burden, temporarily turn off all tags in responses.
     if client.tagtypes_clear().is_ok() {
         let name = dp.name.to_owned();
@@ -1255,25 +1250,18 @@ pub fn fetch_dynamic_playlist(
                     songs_stickers.truncate(limit as usize);
                 }
                 let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+                if cache {
+                    sqlite::cache_dynamic_playlist_results(&dp.name, &songs);
+                }
 
-                if queue {
-                    add_multi(
-                        client,
-                        sender_to_fg,
-                        &songs.into_iter().map(|s| s.uri).collect::<Vec<String>>(),
-                        false,
-                        if play {Some(0)} else {None}, None
+                let mut curr_len: usize = 0;
+                let songs_len = songs.len();
+                while curr_len < songs_len {
+                    let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                    let _ = sender_to_fg.send_blocking(
+                        AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
                     );
-                } else {
-                    let mut curr_len: usize = 0;
-                    let songs_len = songs.len();
-                    while curr_len < songs_len {
-                        let next_len = (curr_len + BATCH_SIZE).min(songs_len);
-                        let _ = sender_to_fg.send_blocking(
-                            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
-                        );
-                        curr_len = next_len;
-                    }
+                    curr_len = next_len;
                 }
             }
             // Send once more w/ an empty list to signal end-of-result
@@ -1284,8 +1272,54 @@ pub fn fetch_dynamic_playlist(
         }
         client.tagtypes_all().expect("Cannot restore tagtypes");
     }
+}
 
-    if queue {
-        let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
+pub fn fetch_dynamic_playlist_cached(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: &str
+) {
+    if let Some(songs_stickers) = sqlite::get_cached_dynamic_playlist_results(name).ok().and_then(|uris| fetch_songs_by_uri(
+            client,
+            &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
+            false
+        ).ok()) {
+        let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+        let mut curr_len: usize = 0;
+        let songs_len = songs.len();
+        while curr_len < songs_len {
+            let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.to_string(), songs[curr_len..next_len].to_vec())
+            );
+            curr_len = next_len;
+        }
+
+        // Send once more w/ an empty list to signal end-of-result
+        println!("Sending end-of-response");
+        let _ = sender_to_fg.send_blocking(
+            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.to_string(), Vec::new())
+        );
     }
+}
+
+pub fn queue_cached_dynamic_playlist(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: &str,
+    play: bool
+) {
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+    if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(name) {
+        add_multi(
+            client,
+            sender_to_fg,
+            &uris,
+            false,
+            if play {Some(0)} else {None},
+            None
+        );
+    }
+
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
 }

@@ -927,7 +927,7 @@ impl PlaylistContentView {
 
         // Fetch high resolution playlist cover
         let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
-            &playlist.get_uri(), false, false
+            playlist.get_uri(), false, false
         );
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]

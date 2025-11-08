@@ -1,4 +1,4 @@
-use glib::{clone, closure_local, Object, SignalHandlerId, ParamSpec, ParamSpecString};
+use glib::{clone, Object, ParamSpec, ParamSpecString};
 use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
     cell::{Cell, OnceCell, RefCell},
@@ -7,7 +7,7 @@ use std::{
 use once_cell::sync::Lazy;
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
+    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache},
     common::{inode::INodeInfo, INode}
 };
 
