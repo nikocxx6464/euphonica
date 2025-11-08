@@ -63,11 +63,32 @@ jobs:
         # In a standard Debian environment, PKG_CONFIG_PATH should be correct.
         meson setup build --buildtype=release --prefix=/usr
 
-    - name: 📦 Compile and Stage Install
+    - name: 📦 Compile and Stage Install (FINAL FIX)
       run: |
+        # 1. Compile the project
         ninja -C build
+        
+        # 2. Run the meson install command to stage non-binary files (desktop, icons)
         DESTDIR=./package meson install -C build
-
+        
+        # 3. CRITICAL: Verification and Fallback to copy the main executable
+        if [ ! -f ./package/usr/bin/euphonica ]; then
+          echo "WARNING: Euphonica binary missing from staging area. Attempting manual copy..."
+          
+          # This reliably finds the executable wherever Rust put it
+          COMPILED_BINARY=$(find build -name "euphonica" -type f -executable | head -n 1)
+          
+          if [ -f "$COMPILED_BINARY" ]; then
+            # Copy the executable to the correct staging location (/usr/bin)
+            mkdir -p ./package/usr/bin
+            cp "$COMPILED_BINARY" ./package/usr/bin/
+            echo "SUCCESS: Binary manually copied. Size should now be correct."
+          else
+            echo "ERROR: Compiled binary not found! Check Ninja output for build failure."
+            exit 1
+          fi
+        fi
+        
     - name: 🎁 Create DEB Package (Stable Echo)
       run: |
         mkdir -p ./package/DEBIAN
