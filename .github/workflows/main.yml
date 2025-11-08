@@ -2,7 +2,8 @@ name: Build Euphonica AArch64 DEB
 
 on:
   workflow_dispatch: # Allows manual triggering
-
+  push:
+  
 jobs:
   build_arm64_deb:
     # Use the dedicated ARM64 runner
@@ -41,7 +42,6 @@ jobs:
           xdg-desktop-portal-gtk \
           libdconf-dev \
           desktop-file-utils \
-          gtk4 \
           mpd \
           libmpdclient-dev # <-- THE MISSING DEPENDENCY
 
