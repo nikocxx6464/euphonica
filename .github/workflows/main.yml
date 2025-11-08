@@ -63,50 +63,61 @@ jobs:
         # In a standard Debian environment, PKG_CONFIG_PATH should be correct.
         meson setup build --buildtype=release --prefix=/usr
 
-    - name: 📦 Compile and Stage Install (FINAL FIX)
+    - name: 📦 Compile and Stage Install (TRUSTED PACKAGE STAGING)
       run: |
-        # 1. Compile the project
+        # 1. Create the absolute staging directory
+        mkdir -p /package
+        
+        # 2. Compile the project
         ninja -C build
         
-        # 2. Run the meson install command to stage non-binary files (desktop, icons)
-        DESTDIR=./package meson install -C build
+        # 3. Run the meson install command, targeting the absolute path /package
+        # This installs the vast majority of files (desktop, icons, etc.)
+        DESTDIR=/package meson install -C build
         
-        # 3. CRITICAL: Verification and Fallback to copy the main executable
-        if [ ! -f ./package/usr/bin/euphonica ]; then
-          echo "WARNING: Euphonica binary missing from staging area. Attempting manual copy..."
-          
-          # This reliably finds the executable wherever Rust put it
+        # --- START OF BACKUP SOLUTION trademark: TARGETED FIXES ---
+        
+        # 4. BACKUP: Capture the main executable (euphonica)
+        if [ ! -f /package/usr/bin/euphonica ]; then
+          echo "WARNING: Binary missing from /package/usr/bin/. Attempting manual copy..."
           COMPILED_BINARY=$(find build -name "euphonica" -type f -executable | head -n 1)
-          
           if [ -f "$COMPILED_BINARY" ]; then
-            # Copy the executable to the correct staging location (/usr/bin)
-            mkdir -p ./package/usr/bin
-            cp "$COMPILED_BINARY" ./package/usr/bin/
-            echo "SUCCESS: Binary manually copied. Size should now be correct."
+            mkdir -p /package/usr/bin
+            cp "$COMPILED_BINARY" /package/usr/bin/
+            echo "SUCCESS: Binary manually copied."
           else
-            echo "ERROR: Compiled binary not found! Check Ninja output for build failure."
+            echo "ERROR: Compiled binary not found! Exiting."
             exit 1
           fi
         fi
         
-    - name: 🎁 Create DEB Package (Stable Echo)
+        # 5. BACKUP: Capture the missing GResource file (euphonica.gresource)
+        # This file MUST be present to resolve the "Failed to open file" panic.
+        if [ ! -f /package/usr/share/euphonica/euphonica.gresource ]; then
+          echo "WARNING: GResource file missing. Attempting manual copy..."
+          
+          # Reliably find the resource file in the build output
+          GRESOURCE_FILE=$(find build -name "euphonica.gresource" | head -n 1)
+          
+          if [ -f "$GRESOURCE_FILE" ]; then
+            # Copy the GResource file into the absolute staging path
+            mkdir -p /package/usr/share/euphonica
+            cp "$GRESOURCE_FILE" /package/usr/share/euphonica/
+            echo "SUCCESS: GResource file manually copied."
+          else
+            echo "ERROR: euphonica.gresource resource file not found! Exiting."
+            exit 1
+          fi
+        fi
+        # --- END OF BACKUP SOLUTION trademark ---
+
+    - name: 🎁 Create Deployable Tarball
       run: |
-        mkdir -p ./package/DEBIAN
-
-        # Use stable echo commands to create the control file
-        CONTROL_FILE="./package/DEBIAN/control"
-        echo "Package: euphonica" > $CONTROL_FILE
-        echo "Version: 1.0.0-git-latest" >> $CONTROL_FILE
-        echo "Architecture: arm64" >> $CONTROL_FILE
-        echo "Maintainer: Euphonica Developers <none@email.com>" >> $CONTROL_FILE
-        echo "Description: Euphonica MPD Client" >> $CONTROL_FILE
-        # Dependencies are stable between Ubuntu/Debian for these core libraries.
-        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2" >> $CONTROL_FILE
+        # ARCHIVE THE ENTIRE CONTENTS OF THE ABSOLUTE STAGING FOLDER /package
+        tar -czvf euphonica-arm64-deploy.tar.gz -C /package .
         
-        dpkg-deb --build ./package
-
-    - name: ⬆️ Upload Artifact
+    - name: ⬆️ Upload Artifact (Tarball)
       uses: actions/upload-artifact@v4
       with:
-        name: euphonica-arm64-deb
-        path: package.deb
+        name: euphonica-arm64-deploy-tarball
+        path: euphonica-arm64-deploy.tar.gz
