@@ -41,6 +41,8 @@ jobs:
           xdg-desktop-portal-gtk \
           libdconf-dev \
           desktop-file-utils \
+          gtk4 \
+          mpd \
           libmpdclient-dev # <-- THE MISSING DEPENDENCY
 
     - name: 🔨 Configure Meson Build
@@ -66,7 +68,7 @@ jobs:
         echo "Architecture: arm64" >> $CONTROL_FILE
         echo "Maintainer: None <no@email.com>" >> $CONTROL_FILE
         echo "Description: Euphonica MPD Client" >> $CONTROL_FILE
-        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2" >> $CONTROL_FILE
+        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2, mpd, gtk4" >> $CONTROL_FILE
         
         # Build the final .deb package
         dpkg-deb --build ./package
