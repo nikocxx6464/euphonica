@@ -1,0 +1,137 @@
+# This GitHub Actions workflow builds the Euphonica MPD client
+# for Ubuntu aarch64 (for Termux proot-distro) and packages it as a .deb file.
+
+name: Build Euphonica .deb (Native aarch64)
+
+on:
+  # Allows you to run this workflow manually from the Actions tab
+  workflow_dispatch:
+  # Triggers the workflow on push events to the main branch
+  push:
+    branches: [ "main" ]
+
+# Global variables for easy configuration
+env:
+  PROJECT_NAME: euphonica
+  VERSION_PREFIX: 0.1.0-git
+  RUNNER_ARCH: aarch64
+  # Using the latest available ARM runner label
+  RUNNER_OS: ubuntu-24.04-arm
+
+jobs:
+  # Job 1: Setup, Install Dependencies (using a PPA for a modern libmpdclient), and Build
+  build:
+    name: Build ${{ env.PROJECT_NAME }} on ${{ env.RUNNER_OS }}
+    runs-on: ${{ env.RUNNER_OS }}
+    # Output the build directory path for use in the packaging job
+    outputs:
+      build_dir_path: ${{ steps.meson_setup.outputs.build-dir }}
+
+    steps:
+      - name: Checkout Euphonica source
+        uses: actions/checkout@v4
+
+      # NEW: Install Rust toolchain using rustup
+      - name: Install stable Rust toolchain (rustup)
+        uses: dtolnay/rust-toolchain@stable
+
+      # Marketplace Action: Install system dependencies including those needing a newer version
+      - name: Install dependencies (including PPA for modern libmpdclient)
+        uses: s-yakushev/setup-build-deps@v1
+        with:
+          # Use a PPA that may provide a more recent libmpdclient package,
+          # bypassing the potentially old package in Ubuntu 24.04's main repo.
+          ppa: ppa:beineri/opt-qt-latest
+          packages: |
+            build-essential 
+            pkg-config 
+            git 
+            libgtk-4-dev 
+            libadwaita-1-dev 
+            libmpdclient-dev 
+            libfmt-dev 
+            nlohmann-json3-dev 
+            libtag1-dev 
+            libgstreamer1.0-dev 
+            libgstreamer-plugins-base1.0-dev 
+            gstreamer1.0-plugins-base 
+            gstreamer1.0-plugins-good 
+            gstreamer1.0-plugins-bad 
+            gstreamer1.0-plugins-ugly 
+            gstreamer1.0-libav
+            desktop-file-utils
+
+      # Marketplace Action: Setup Meson and Ninja
+      - name: Setup Meson Build System
+        uses: mesonbuild/setup-meson@v1
+        id: meson_setup
+        with:
+          # Configure the Meson build
+          setup-option: -Dprefix=/usr
+
+      - name: Compile the project
+        run: meson compile -C builddir
+
+      - name: Archive Meson build directory
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-builddir-${{ github.sha }}
+          # The directory to upload is the one set up by setup-meson
+          path: builddir
+          # The packaging job depends on the file system structure being preserved
+          retention-days: 1
+
+
+  # Job 2: Packaging the build artifact into a .deb file
+  package:
+    name: Package .deb (checkinstall)
+    # This job needs the 'build' job to succeed and retrieve its outputs
+    needs: [build]
+    # Re-run on the same architecture as the build job
+    runs-on: ${{ env.RUNNER_OS }}
+
+    steps:
+      - name: Checkout Euphonica source (for checkinstall context)
+        uses: actions/checkout@v4
+
+      - name: Download Meson build directory
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-builddir-${{ github.sha }}
+          # This should recreate the 'builddir' folder
+          path: .
+
+      - name: Install checkinstall
+        run: sudo apt-get update -y && sudo apt-get install -y checkinstall
+
+      - name: Determine Package Version
+        id: pkg_version
+        run: |
+          VERSION="${{ env.VERSION_PREFIX }}-${{ github.sha }}"
+          echo "PACKAGE_VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Use checkinstall to package the build
+        run: |
+            echo "Running packaging step..."
+            cd builddir
+            
+            # CRITICAL: We use 'meson install' combined with checkinstall
+            # The checkinstall invocation installs the compiled files via 'meson install'
+            # and creates the .deb file based on the installed files.
+            sudo checkinstall --pkgname=${{ env.PROJECT_NAME }} \
+                              --pkgversion="${{ steps.pkg_version.outputs.PACKAGE_VERSION }}" \
+                              --arch=${{ env.RUNNER_ARCH }} \
+                              --maintainer=Euphonica Developers \
+                              --default \
+                              meson install
+            
+            # Move the generated .deb file out of the build directory
+            sudo mv euphonica*.deb ..
+            cd ..
+
+      - name: Upload .deb package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PROJECT_NAME }}-deb-${{ env.RUNNER_ARCH }}
+          # The .deb is now in the current working directory (parent of builddir)
+          path: euphonica*.deb
