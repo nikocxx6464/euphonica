@@ -40,6 +40,7 @@ jobs:
           clang \
           xdg-desktop-portal-gtk \
           libdconf-dev \
+          desktop-file-utils \
           libmpdclient-dev # <-- THE MISSING DEPENDENCY
 
     - name: 🔨 Configure Meson Build
