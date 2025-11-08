@@ -43,6 +43,7 @@ jobs:
           libdconf-dev \
           desktop-file-utils \
           mpd \
+          libxml2-utils \
           libmpdclient-dev # <-- THE MISSING DEPENDENCY
 
     - name: 🔨 Configure Meson Build
@@ -51,7 +52,7 @@ jobs:
 
     - name: 📦 Compile and Stage Install
       run: |
-        export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig:$PKG_CONFIG_PATH"
+        export PKG_CONFIG_PATH="/usr/lib/aarch64-linux-gnu/pkgconfig"
         ninja -C build
         DESTDIR=./package meson install -C build
 
