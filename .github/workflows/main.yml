@@ -2,7 +2,8 @@ name: Build Euphonica AArch64 DEB (Unstable Container)
 
 on:
   workflow_dispatch:
-
+  push:
+  
 jobs:
   build_arm64_deb:
     # 1. Use the ARM runner
@@ -17,7 +18,7 @@ jobs:
       run: |
         # Update package lists
         apt-get update
-        apt-get install sudo git wget curl jq
+        apt-get install sudo git wget curl jq -y
         
     - name: ⬇️ Checkout Repository
       uses: actions/checkout@v4
@@ -57,11 +58,6 @@ jobs:
           desktop-file-utils \
           libxml2-utils
           
-    - name: ⚙️ Fetch Submodules Manually
-      run: |
-        # This command runs *inside* the container, where Git is fully installed.
-        git submodule update --init --recursive
-
     - name: 🔨 Configure Meson Build
       run: |
         # In a standard Debian environment, PKG_CONFIG_PATH should be correct.
