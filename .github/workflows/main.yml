@@ -1,13 +1,17 @@
-name: Build Euphonica AArch64 DEB
+name: Build Euphonica AArch64 DEB (Unstable Container)
 
 on:
-  workflow_dispatch: # Allows manual triggering
-  push:
-  
+  workflow_dispatch:
+
 jobs:
   build_arm64_deb:
-    # Use the dedicated ARM64 runner
-    runs-on: ubuntu-24.04-arm
+    # 1. Use the ARM runner
+    runs-on: ubuntu-24.04-arm 
+    
+    # 2. Use the Debian Unstable (sid) container for the newest GTK4
+    container:
+      image: debian:sid-slim # Unstable branch for maximum GTK version
+      options: --user root
 
     steps:
     - name: ⬇️ Checkout Repository
@@ -21,10 +25,13 @@ jobs:
       with:
         toolchain: stable
         
-    - name: ⚙️ Install Build Dependencies (FINAL)
+    - name: ⚙️ Install Build Dependencies (Debian Sid)
       run: |
-        sudo apt-get update
-        sudo apt-get install -y \
+        # Update package lists
+        apt-get update
+        
+        # Install all necessary dependencies (No 'sudo' needed)
+        apt-get install -y \
           build-essential \
           git \
           meson \
@@ -41,69 +48,36 @@ jobs:
           clang \
           xdg-desktop-portal-gtk \
           libdconf-dev \
+          libmpdclient-dev \
           desktop-file-utils \
-          mpd \
-          libxml2-utils \
-          libmpdclient-dev # <-- THE MISSING DEPENDENCY
-# ... (Previous steps up to Install Build Dependencies)
-
-    - name: 🔍 Find and Export PKG_CONFIG_PATH
-      id: find_pc_path
-      run: |
-        # Recursively search /usr/lib/aarch64-linux-gnu/ and /usr/share/pkgconfig for gtk4.pc
-        # and extract the directory name. This handles non-standard installs.
-        # The result is stored in the 'PKG_DIR' variable.
-        PKG_DIR=$(find /usr/lib/aarch64-linux-gnu /usr/share/pkgconfig -name 'gtk4.pc' -print -quit | xargs dirname)
-        
-        if [ -z "$PKG_DIR" ]; then
-          echo "ERROR: gtk4.pc was not found! Build will likely fail."
-          exit 1
-        fi
-        
-        # Output the new path so it can be used by subsequent steps.
-        echo "Found gtk4.pc in: $PKG_DIR"
-        
-        # Set a GitHub Actions output variable that other steps can read.
-        echo "PKG_CONFIG_DIR=$PKG_DIR" >> $GITHUB_OUTPUT
+          libxml2-utils
 
     - name: 🔨 Configure Meson Build
-      # Use the output from the previous step to dynamically set the environment variable.
-      env:
-        # Append the found path to the existing aarch64 path (just in case).
-        PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:${{ steps.find_pc_path.outputs.PKG_CONFIG_DIR }}
       run: |
+        # In a standard Debian environment, PKG_CONFIG_PATH should be correct.
         meson setup build --buildtype=release --prefix=/usr
 
     - name: 📦 Compile and Stage Install
-      # The global 'env' block (set in the job definition) is now less critical,
-      # but we must ensure PKG_CONFIG_PATH is set for this step too.
-      env:
-        # Use the same dynamically set path for the compile step.
-        PKG_CONFIG_PATH: /usr/lib/aarch64-linux-gnu/pkgconfig:${{ steps.find_pc_path.outputs.PKG_CONFIG_DIR }}
       run: |
         ninja -C build
         DESTDIR=./package meson install -C build
-        
-    - name: 🎁 Create DEB Package (FINAL)
+
+    - name: 🎁 Create DEB Package (Stable Echo)
       run: |
-        # Create the necessary DEBIAN control file directory
         mkdir -p ./package/DEBIAN
 
-        # --- Use echo to stably create the multiline control file ---
-        # Note: The date command uses a stable shell sub-shell
+        # Use stable echo commands to create the control file
         CONTROL_FILE="./package/DEBIAN/control"
-        
         echo "Package: euphonica" > $CONTROL_FILE
         echo "Version: 1.0.0-git-latest" >> $CONTROL_FILE
         echo "Architecture: arm64" >> $CONTROL_FILE
-        echo "Maintainer: None <none@email.com>" >> $CONTROL_FILE
+        echo "Maintainer: Euphonica Developers <none@email.com>" >> $CONTROL_FILE
         echo "Description: Euphonica MPD Client" >> $CONTROL_FILE
-        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2, mpd, gtk4" >> $CONTROL_FILE
+        # Dependencies are stable between Ubuntu/Debian for these core libraries.
+        echo "Depends: libdbus-1-3, libgtk-4-1, libadwaita-1-0, libpipewire-0.3-0, libsqlite3-0, libssl3, libsecret-1-0, dconf-gsettings-backend, libdconf1, libmpdclient2" >> $CONTROL_FILE
         
-        # Build the final .deb package
         dpkg-deb --build ./package
 
-        
     - name: ⬆️ Upload Artifact
       uses: actions/upload-artifact@v4
       with:
