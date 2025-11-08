@@ -1,36 +1,34 @@
 use duplicate::duplicate;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding, subclass::Signal};
 use gtk::{gdk, gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
+    sync::OnceLock,
     rc::Rc,
 };
+use ashpd::desktop::file_chooser::SelectedFiles;
+use async_channel::Sender;
 use derivative::Derivative;
 
 use super::{AlbumCell, Library};
 use crate::{
     cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, RowAddButtons, Song, SongRow}, utils::{format_secs_as_duration, settings_manager},
+    library::add_to_playlist::AddToPlaylistButton,
+    common::{Album, Artist, RowAddButtons, Song, SongRow, ContentView}, utils::{format_secs_as_duration, settings_manager, tokio_runtime},
 };
 
 mod imp {
-    use std::{cell::Cell, sync::OnceLock};
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::Sender;
-    use gio::{ActionEntry, SimpleActionGroup};
-    use glib::subclass::Signal;
-
-    use crate::{library::add_to_playlist::AddToPlaylistButton, utils};
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
+        #[template_child]
+        pub inner: TemplateChild<ContentView>,
         #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
@@ -41,11 +39,7 @@ mod imp {
         pub album_count: TemplateChild<gtk::Label>,
 
         #[template_child]
-        pub infobox_revealer: TemplateChild<gtk::Revealer>,
-        #[template_child]
         pub infobox_spinner: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
 
         #[template_child]
         pub bio_text: TemplateChild<gtk::Label>,
@@ -206,7 +200,7 @@ mod imp {
                     move |_, _, _| {
                         if let Some(sender) = obj.imp().filepath_sender.get() {
                             let sender = sender.clone();
-                            utils::tokio_runtime().spawn(async move {
+                            tokio_runtime().spawn(async move {
                                 let maybe_files = SelectedFiles::open_file()
                                     .title("Select a new avatar")
                                     .modal(true)
@@ -418,27 +412,6 @@ impl ArtistContentView {
                 }
             ),
         );
-
-        let infobox_revealer = self.imp().infobox_revealer.get();
-        let collapse_infobox = self.imp().collapse_infobox.get();
-        collapse_infobox
-            .bind_property("active", &infobox_revealer, "reveal-child")
-            .transform_to(|_, active: bool| Some(!active))
-            .transform_from(|_, active: bool| Some(!active))
-            .bidirectional()
-            .sync_create()
-            .build();
-
-        infobox_revealer
-            .bind_property("child-revealed", &collapse_infobox, "icon-name")
-            .transform_to(|_, revealed| {
-                if revealed {
-                    return Some("up-symbolic");
-                }
-                Some("down-symbolic")
-            })
-            .sync_create()
-            .build();
     }
 
     fn setup_song_subview(&self, client_state: ClientState) {

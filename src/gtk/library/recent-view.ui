@@ -6,9 +6,9 @@
       <object class="AdwNavigationView" id="nav_view">
         <child>
           <object class="AdwNavigationPage">
+            <property name="title">Recents</property>
             <child>
               <object class="AdwToolbarView">
-                <property name="title">Recents</property>
                 <child type="top">
                   <object class="AdwHeaderBar">
                     <property name="show-title">false</property>

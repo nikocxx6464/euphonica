@@ -1,4 +1,5 @@
 pub mod song_row;
+pub mod content_view;
 pub mod row_add_buttons;
 pub mod row_edit_buttons;
 pub mod album;
@@ -14,6 +15,7 @@ pub mod theme_selector;
 pub mod dynamic_playlist;
 
 pub use song_row::SongRow;
+pub use content_view::ContentView;
 pub use row_add_buttons::RowAddButtons;
 pub use row_edit_buttons::RowEditButtons;
 pub use sticker::Stickers;

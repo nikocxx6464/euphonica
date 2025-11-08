@@ -3,27 +3,23 @@ use gio::{ActionEntry, SimpleActionGroup, Menu};
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
 use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
     rc::Rc,
 };
 use time::{format_description, Date};
 use derivative::Derivative;
+use ashpd::desktop::file_chooser::SelectedFiles;
+use async_channel::Sender;
 use super::{artist_tag::ArtistTag, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
     client::{state::StickersSupportLevel, ClientState},
-    common::{Album, AlbumInfo, Artist, CoverSource, Rating, RowAddButtons, Song, SongRow},
-    utils::format_secs_as_duration, window::EuphonicaWindow,
+    common::{Album, AlbumInfo, Artist, CoverSource, Rating, RowAddButtons, Song, SongRow, ContentView},
+    utils::{tokio_runtime, format_secs_as_duration}, window::EuphonicaWindow,
+    library::add_to_playlist::AddToPlaylistButton
 };
 
 mod imp {
-    use std::cell::Cell;
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::Sender;
-
-    use crate::{common::Rating, library::add_to_playlist::AddToPlaylistButton, utils};
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -31,15 +27,9 @@ mod imp {
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/album-content-view.ui")]
     pub struct AlbumContentView {
         #[template_child]
-        pub infobox_revealer: TemplateChild<gtk::Revealer>,
-        #[template_child]
-        pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
+        pub inner: TemplateChild<ContentView>,
         #[template_child]
         pub cover: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub content_spinner: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub content: TemplateChild<gtk::ListView>,
 
         #[template_child]
         pub infobox_spinner: TemplateChild<gtk::Stack>,
@@ -81,13 +71,17 @@ mod imp {
         #[template_child]
         pub sel_none: TemplateChild<gtk::Button>,
 
+        #[template_child]
+        pub content_spinner: TemplateChild<gtk::Stack>,
+        #[template_child]
+        pub content: TemplateChild<gtk::ListView>,
+
         #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
         #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub sel_model: gtk::MultiSelection,
         #[derivative(Default(value = "gio::ListStore::new::<ArtistTag>()"))]
         pub artist_tags: gio::ListStore,
-
         pub library: OnceCell<Library>,
         pub album: RefCell<Option<Album>>,
         pub window: OnceCell<EuphonicaWindow>,
@@ -109,7 +103,6 @@ mod imp {
             Self::bind_template(klass);
 
             klass.set_layout_manager_type::<gtk::BinLayout>();
-            // klass.set_css_name("albumview");
             klass.set_accessible_role(gtk::AccessibleRole::Group);
         }
 
@@ -195,7 +188,7 @@ mod imp {
                     move |_, _, _| {
                         if let Some(sender) = obj.imp().filepath_sender.get() {
                             let sender = sender.clone();
-                            utils::tokio_runtime().spawn(async move {
+                            tokio_runtime().spawn(async move {
                                 let maybe_files = SelectedFiles::open_file()
                                     .title("Select a new album art")
                                     .modal(true)
@@ -532,26 +525,6 @@ impl AlbumContentView {
                 }
             ),
         );
-        let infobox_revealer = self.imp().infobox_revealer.get();
-        let collapse_infobox = self.imp().collapse_infobox.get();
-        collapse_infobox
-            .bind_property("active", &infobox_revealer, "reveal-child")
-            .transform_to(|_, active: bool| Some(!active))
-            .transform_from(|_, active: bool| Some(!active))
-            .bidirectional()
-            .sync_create()
-            .build();
-
-        infobox_revealer
-            .bind_property("child-revealed", &collapse_infobox, "icon-name")
-            .transform_to(|_, revealed| {
-                if revealed {
-                    return Some("up-symbolic");
-                }
-                Some("down-symbolic")
-            })
-            .sync_create()
-            .build();
 
         let replace_queue_btn = self.imp().replace_queue.get();
         client_state
