@@ -29,8 +29,6 @@ mod imp {
         pub cover: TemplateChild<gtk::Image>,
 
         #[template_child]
-        pub infobox_spinner: TemplateChild<gtk::Stack>,
-        #[template_child]
         pub title: TemplateChild<gtk::Label>,
 
         #[template_child]

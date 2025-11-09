@@ -486,8 +486,8 @@ impl Library {
     }
 
     /// Get all dynamic playlists
-    pub fn init_dyn_playlists(&self) {
-        if !self.imp().dyn_playlists_initialized.get() {
+    pub fn init_dyn_playlists(&self, refresh: bool) {
+        if !self.imp().dyn_playlists_initialized.get() || refresh {
             self.imp().dyn_playlists.remove_all();
             glib::spawn_future_local(clone!(
                 #[weak(rename_to = this)]

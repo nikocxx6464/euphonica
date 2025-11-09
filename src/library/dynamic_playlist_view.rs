@@ -8,7 +8,7 @@ use std::{cell::Cell, cmp::Ordering, rc::Rc};
 
 use glib::clone;
 
-use super::Library;
+use super::{Library, DynamicPlaylistContentView};
 use crate::{
     cache::Cache,
     client::{ClientState, ConnectionState},
@@ -57,10 +57,12 @@ mod imp {
         // Content
         #[template_child]
         pub list_view: TemplateChild<gtk::ListView>,
-        // #[template_child]
-        // pub content_page: TemplateChild<adw::NavigationPage>,
-        // #[template_child]
-        // pub content_view: TemplateChild<DynamicPlaylistContentView>,
+        #[template_child]
+        pub content_page: TemplateChild<adw::NavigationPage>,
+        #[template_child]
+        pub content_view: TemplateChild<DynamicPlaylistContentView>,
+
+        // Editor view is created on demand.
 
         // Search & filter models
         pub search_filter: gtk::CustomFilter,
@@ -165,11 +167,11 @@ impl DynamicPlaylistView {
         client_state: ClientState,
         window: &EuphonicaWindow,
     ) {
-        // let content_view = self.imp().content_view.get();
-        // content_view.setup(library.clone(), client_state.clone(), cache.clone(), window);
-        // self.imp().content_page.connect_hidden(move |_| {
-        //     content_view.unbind(true);
-        // });
+        let content_view = self.imp().content_view.get();
+        content_view.setup(library.clone(), client_state.clone(), cache.clone());
+        self.imp().content_page.connect_hidden(move |_| {
+            content_view.unbind();
+        });
         self.imp()
             .library
             .set(library.clone())
@@ -190,7 +192,7 @@ impl DynamicPlaylistView {
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.get().unwrap().init_dyn_playlists();
+                        this.imp().library.get().unwrap().init_dyn_playlists(false);
                     }
                 }
             ),
@@ -218,8 +220,11 @@ impl DynamicPlaylistView {
                         closure_local!(
                             #[weak]
                             this,
-                            move |_: DynamicPlaylistEditorView| {
+                            move |_: DynamicPlaylistEditorView, should_refresh: bool| {
                                 this.imp().nav_view.pop_to_tag("list");
+                                if should_refresh {
+                                    this.imp().library.get().unwrap().init_dyn_playlists(true);
+                                }
                             }
                         )
                     );
@@ -412,33 +417,18 @@ impl DynamicPlaylistView {
     }
 
     pub fn on_playlist_clicked(&self, inode: &INode) {
-        // let content_view = self.imp().content_view.get();
-        // content_view.unbind(true);
-        // content_view.bind(inode.clone());
-        // if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
-        //     self.imp().nav_view.push_by_tag("content");
-        // }
-        // self.imp()
-        //     .library
-        //     .get()
-        //     .unwrap()
-        //     .init_playlist(inode.get_name().unwrap());
+        let content_view = self.imp().content_view.get();
+        content_view.unbind();
+        content_view.bind_by_name(inode.get_uri());
+        if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
+            self.imp().nav_view.push_by_tag("content");
+        }
+        // Unlike other views, DynamicPlaylistContentView initialises itself.
     }
 
     fn setup_listview(&self) {
         let library = self.imp().library.get().unwrap();
         let cache = self.imp().cache.get().unwrap();
-        // client_state.connect_closure(
-        //     "inode-basic-info-downloaded",
-        //     false,
-        //     closure_local!(
-        //         #[strong(rename_to = this)]
-        //         self,
-        //         move |_: ClientState, inode: INode| {
-        //             this.add_inode(inode);
-        //         }
-        //     )
-        // );
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
         let search_entry = self.imp().search_entry.get();

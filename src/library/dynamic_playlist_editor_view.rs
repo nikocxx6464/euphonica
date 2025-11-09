@@ -300,7 +300,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.obj().exit();
+                    this.obj().exit(false);
                 }
             ));
 
@@ -341,7 +341,9 @@ mod imp {
             static SIGNALS: OnceLock<Vec<Signal>> = OnceLock::new();
             SIGNALS.get_or_init(|| {
                 vec![
-                    Signal::builder("exit-clicked").build()
+                    Signal::builder("exit-clicked").param_types([
+                        bool::static_type()  // if true, indicates saved changes & should reset list & content views
+                    ]).build()
                 ]
             })
         }
@@ -837,7 +839,7 @@ impl DynamicPlaylistEditorView {
                 match res {
                     Ok(()) => {
                         this.imp().unsaved.set(false);
-                        this.exit();
+                        this.exit(true);
                     }
                     Err(e) => {
                         dbg!(e);
@@ -883,7 +885,7 @@ impl DynamicPlaylistEditorView {
         }
     }
 
-    fn exit(&self) {
+    fn exit(&self, should_refresh: bool) {
         if self.imp().unsaved.get() {
             let dialog = self.imp().unsaved_dialog.get();
             dialog.choose(
@@ -898,7 +900,7 @@ impl DynamicPlaylistEditorView {
                                 this.on_save_btn_clicked();
                             }
                             "discard" => {
-                                this.emit_by_name::<()>("exit_clicked", &[]);
+                                this.emit_by_name::<()>("exit_clicked", &[&false.to_value()]);
                             }
                             _ => {}
                         }
@@ -906,7 +908,7 @@ impl DynamicPlaylistEditorView {
                 ),
             );
         } else {
-            self.emit_by_name::<()>("exit_clicked", &[]);
+            self.emit_by_name::<()>("exit_clicked", &[&should_refresh.to_value()]);
         }
     }
 

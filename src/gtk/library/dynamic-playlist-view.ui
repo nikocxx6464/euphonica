@@ -97,15 +97,16 @@
             </child>
           </object>
         </child>
-        <!-- <child> -->
-        <!--   <object class="AdwNavigationPage" id="content_page"> -->
-        <!--     <property name="tag">content</property> -->
-        <!--     <property name="title" translatable="true">Dynamic Playlist Info</property> -->
-        <!--     <child> -->
-        <!--       <object class="EuphonicaDynamicPlaylistContentView" id="content_view"></object> -->
-        <!--     </child> -->
-        <!--   </object> -->
-        <!-- </child> -->
+        <child>
+          <object class="AdwNavigationPage" id="content_page">
+            <property name="tag">content</property>
+            <!-- Not shown, no need to translate -->
+            <property name="title">Dynamic Playlist Info</property>
+            <child>
+              <object class="EuphonicaDynamicPlaylistContentView" id="content_view"></object>
+            </child>
+          </object>
+        </child>
       </object>
     </child>
   </template>

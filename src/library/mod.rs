@@ -41,6 +41,7 @@ pub use artist_view::ArtistView;
 pub use folder_view::FolderView;
 
 pub use dynamic_playlist_view::DynamicPlaylistView;
+pub use dynamic_playlist_content_view::DynamicPlaylistContentView;
 pub use dynamic_playlist_editor_view::DynamicPlaylistEditorView;
 
 pub use playlist_content_view::PlaylistContentView;

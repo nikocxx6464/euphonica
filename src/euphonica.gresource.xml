@@ -23,6 +23,7 @@
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-editor-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/rule-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/ordering-button.ui</file>

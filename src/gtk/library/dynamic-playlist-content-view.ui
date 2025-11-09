@@ -86,7 +86,7 @@
                               </object>
                             </child>
                             <child>
-                              <object class="GtkLabel" id="last_mod">
+                              <object class="GtkLabel" id="last_modified">
                                 <property name="label">-</property>
                                 <style>
                                   <class name="caption"/>
