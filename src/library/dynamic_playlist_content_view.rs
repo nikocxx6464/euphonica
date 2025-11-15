@@ -158,10 +158,6 @@ impl DynamicPlaylistContentView {
     }
 
     pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
-        self.imp()
-           .cache
-           .set(cache)
-           .expect("DynamicPlaylistContentView cannot bind to cache");
         self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
 
         client_state.connect_closure(
@@ -198,14 +194,16 @@ impl DynamicPlaylistContentView {
 
         // For now don't show album arts as most of the time songs in the same
         // album will have the same embedded art anyway.
-        factory.connect_setup(
+        factory.connect_setup(clone!(
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(None);
-                row.set_index_visible(true);
-                row.set_thumbnail_visible(false);
+                let row = SongRow::new(Some(cache));
+                row.set_index_visible(false);
+                row.set_thumbnail_visible(true);
                 item.property_expression("item")
                     .chain_property::<Song>("track")
                     .bind(&row, "index", gtk::Widget::NONE);
@@ -238,7 +236,7 @@ impl DynamicPlaylistContentView {
                 // No queue buttons here. We currently only support queuing the entire DP at once.
                 item.set_child(Some(&row));
             }
-        );
+        ));
         // Tell factory how to bind `AlbumSongRow` to one of our Album GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
@@ -290,6 +288,11 @@ impl DynamicPlaylistContentView {
         //         }
         //     }
         // ));
+
+        self.imp()
+           .cache
+           .set(cache)
+           .expect("DynamicPlaylistContentView cannot bind to cache");
     }
 
     fn clear_cover(&self) {
