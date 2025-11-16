@@ -191,29 +191,11 @@ mod imp {
         }
 
         pub fn numeric_sticker_operator_model() -> &'static [&'static str] {
-            static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-                vec![
-                    "==",
-                    ">",
-                    "<"
-                ]
-            });
-
-            MODEL.as_ref()
+            StickerOperation::numeric_model()
         }
 
         pub fn text_sticker_operator_model() -> &'static [&'static str] {
-            static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
-                vec![
-                    "==",
-                    ">",
-                    "<",
-                    "contains",
-                    "starts with"
-                ]
-            });
-
-            MODEL.as_ref()
+            StickerOperation::text_model()
         }
 
         pub fn uri_operator_model() -> &'static [&'static str] {
@@ -357,6 +339,15 @@ glib::wrapper! {
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
+fn tag_op_index(tag_op: TagOperation) -> u32 {
+    match tag_op {
+        TagOperation::Equals => 0,
+        TagOperation::NotEquals => 1,
+        TagOperation::Contains => 2,
+        TagOperation::StartsWith => 3
+    }
+}
+
 impl RuleButton {
     pub fn new(wrap_box: &adw::WrapBox) -> Self {
         let res: Self = Object::builder().build();
@@ -376,6 +367,94 @@ impl RuleButton {
                 }
             }
         ));
+        res
+    }
+
+    // FIXME: Find a better way than referring to indices that still doesn't rely on
+    // runtime searching.
+    pub fn from_rule(rule: Rule) -> Self {
+        let res: Self = Object::builder().build();
+        let imp = res.imp();
+        let rule_type = imp.rule_type.get();
+        let op = imp.op.get();
+        match rule {
+            Rule::Sticker(obj_type, key, sop, text) => {
+                rule_type.set_selected(
+                    match obj_type {
+                        StickerObjectType::Album => {
+                            match key.as_str() {
+                                Stickers::RATING_KEY => 1,
+                                _ => unimplemented!()
+                            }
+                        }
+                        StickerObjectType::Song => {
+                            match key.as_str() {
+                                Stickers::RATING_KEY => 0,
+                                Stickers::LAST_PLAYED_KEY => 4,
+                                Stickers::PLAY_COUNT_KEY => 5,
+                                Stickers::LAST_SKIPPED_KEY => 6,
+                                Stickers::SKIP_COUNT_KEY => 7,
+                                _ => unimplemented!()
+                            }
+                        }
+                        _ => unimplemented!()
+                    }
+                );
+                res.imp().on_rule_type_changed();
+                // We use either LHS or RHS depending on the rule type (to sound natural)
+                match key.as_str() {
+                    Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                        // Right now there's no way to remember which unit was selected,
+                        // so if day count is divisible by 7, use "weeks".
+                        let days = text.parse::<u64>().unwrap() / 86400;
+                        if days % 7 == 0 {
+                            imp.lhs.set_text(&(days / 7).to_string());
+                            op.set_selected(1);
+                        } else {
+                            imp.lhs.set_text(&days.to_string());
+                            op.set_selected(0);
+                        }
+                    }
+                    _ => {
+                        op.set_selected(sop.numeric_model_index().unwrap());
+                        imp.rhs.set_text(&text);
+                    }
+                }
+            }
+            Rule::Query(query_lhs, rhs_text) => {
+                rule_type.set_selected(
+                    match query_lhs {
+                        QueryLhs::File | QueryLhs::Base => 2,
+                        QueryLhs::LastMod => 3,  // Should never hit this for this version
+                        QueryLhs::Any(_) => 9,
+                        QueryLhs::Album(_) => 10,
+                        QueryLhs::Artist(_) => 11,
+                        QueryLhs::AlbumArtist(_) => 12,
+                    }
+                );
+                res.imp().on_rule_type_changed();
+                op.set_selected(
+                    match query_lhs {
+                        // uri_operator_model
+                        QueryLhs::File => 0,
+                        QueryLhs::Base => 1,
+                        // tag_operator_model
+                        QueryLhs::Any(tag_op) => tag_op_index(tag_op),
+                        QueryLhs::Album(tag_op) => tag_op_index(tag_op),
+                        QueryLhs::Artist(tag_op) => tag_op_index(tag_op),
+                        QueryLhs::AlbumArtist(tag_op) => tag_op_index(tag_op),
+                        _ => gtk::INVALID_LIST_POSITION
+                    }
+                );
+                imp.rhs.set_text(&rhs_text);
+            }
+            Rule::LastModified(ts) => {
+                rule_type.set_selected(3);
+                res.imp().on_rule_type_changed();
+                imp.rhs.set_text(&ts.to_string());
+            }
+        };
+
         res
     }
 

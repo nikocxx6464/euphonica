@@ -6,7 +6,7 @@ use std::{
     rc::Rc,
 };
 use derivative::Derivative;
-use super::{artist_tag::ArtistTag, Library};
+use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache},
     client::ClientState,
@@ -42,6 +42,8 @@ mod imp {
         pub replace_queue: TemplateChild<gtk::Button>,
         #[template_child]
         pub append_queue: TemplateChild<gtk::Button>,
+        #[template_child]
+        pub edit_btn: TemplateChild<gtk::Button>,
         #[template_child]
         pub refresh_btn: TemplateChild<gtk::Button>,
 
@@ -102,6 +104,7 @@ mod imp {
                         if spinner.visible_child_name().unwrap() != "spinner" {
                             spinner.set_visible_child_name("spinner");
                         }
+                        this.song_list.remove_all();
                         // Block queue actions while refreshing
                         this.append_queue.set_sensitive(false);
                         this.replace_queue.set_sensitive(false);
@@ -157,7 +160,7 @@ impl DynamicPlaylistContentView {
         self.imp().library.get()
     }
 
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
+    pub fn setup(&self, outer: &DynamicPlaylistView, library: Library, client_state: ClientState, cache: Rc<Cache>) {
         self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
 
         client_state.connect_closure(
@@ -188,6 +191,18 @@ impl DynamicPlaylistContentView {
             .invert_boolean()
             .sync_create()
             .build();
+        let edit_btn = self.imp().edit_btn.get();
+        edit_btn.connect_clicked(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[weak]
+            outer,
+            move |_| {
+                if let Some(dp) = this.imp().dp.borrow().as_ref() {
+                    outer.edit_playlist(dp.clone());
+                }
+            }
+        ));
 
         // Set up factory
         let factory = SignalListItemFactory::new();
@@ -273,22 +288,6 @@ impl DynamicPlaylistContentView {
         // Set the factory of the list view
         self.imp().content.set_factory(Some(&factory));
 
-        // Setup click action
-        // self.imp().content.connect_activate(clone!(
-        //     #[weak(rename_to = this)]
-        //     self,
-        //     #[upgrade_or]
-        //     (),
-        //     move |_, position| {
-        //         if let (Some(album), Some(library)) = (
-        //             this.imp().album.borrow().as_ref(),
-        //             this.get_library()
-        //         ) {
-        //             library.queue_album(album.clone(), true, true, Some(position));
-        //         }
-        //     }
-        // ));
-
         self.imp()
            .cache
            .set(cache)
@@ -343,7 +342,7 @@ impl DynamicPlaylistContentView {
                         this.imp().dp.replace(Some(dp));
                     }
                     other => {
-                        dbg!(other);
+                        let _ = dbg!(other);
                     }
                 }
             }

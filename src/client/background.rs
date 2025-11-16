@@ -1035,15 +1035,42 @@ fn resolve_dynamic_playlist_rules(
     // TODO: Optimise sticker operations by limiting to any found URI query clause.
     for clause in sticker_clauses.into_iter() {
         let mut set = FxHashSet::default();
-        fetch_uris_by_sticker(
-            client, clause.0, &clause.1, clause.2, &clause.3, None,
-            |batch| {
-                for uri in batch.into_iter() {
-                    set.insert(uri);
-                }
-                Ok(())
+        match clause.1.as_str() {
+            Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                // Special case: treat RHS as relative to current time
+                fetch_uris_by_sticker(
+                    client,
+                    clause.0,
+                    &clause.1,
+                    clause.2,
+                    &get_past_unix_timestamp(clause.3.parse::<i64>().unwrap()).to_string(),
+                    None,
+                    |batch| {
+                        for uri in batch.into_iter() {
+                            set.insert(uri);
+                        }
+                        Ok(())
+                    }
+                );
             }
-        );
+            _ => {
+                fetch_uris_by_sticker(
+                    client,
+                    clause.0,
+                    &clause.1,
+                    clause.2,
+                    &clause.3,
+                    None,
+                    |batch| {
+                        for uri in batch.into_iter() {
+                            set.insert(uri);
+                        }
+                        Ok(())
+                    }
+                );
+            }
+        }
+
         println!("Length of matches of sticker_clause: {}", set.len());
         res.retain(move |elem| {set.contains(elem)});
         if res.is_empty() {
@@ -1251,7 +1278,10 @@ pub fn fetch_dynamic_playlist(
                 }
                 let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
                 if cache {
-                    sqlite::cache_dynamic_playlist_results(&dp.name, &songs);
+                    if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                        println!("Failed to cache DP query result. Queuing will be incorrect!");
+                        dbg!(db_err);
+                    }
                 }
 
                 let mut curr_len: usize = 0;

@@ -159,6 +159,7 @@ impl StickerObjectType {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum StickerOperation {
+    Equals,
     LessThan,
     GreaterThan,
     Contains,
@@ -169,8 +170,56 @@ pub enum StickerOperation {
 }
 
 impl StickerOperation {
+    pub fn numeric_model() -> &'static [&'static str] {
+        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
+            vec![
+                "==",
+                ">",
+                "<"
+            ]
+        });
+
+        MODEL.as_ref()
+    }
+
+    pub fn numeric_model_index(&self) -> Option<u32> {
+        match self {
+            Self::IntEquals => Some(0),
+            Self::IntGreaterThan => Some(1),
+            Self::IntLessThan => Some(2),
+            _ => None
+        }
+    }
+
+    // TODO: translations
+    pub fn text_model() -> &'static [&'static str] {
+        static MODEL: Lazy<Vec<&str>> = Lazy::new(|| {
+            vec![
+                "==",
+                ">",
+                "<",
+                "contains",
+                "starts with"
+            ]
+        });
+
+        MODEL.as_ref()
+    }
+
+    pub fn text_model_index(&self) -> Option<u32> {
+        match self {
+            Self::Equals => Some(0),
+            Self::GreaterThan => Some(1),
+            Self::LessThan => Some(2),
+            Self::Contains => Some(3),
+            Self::StartsWith => Some(4),
+            _ => None
+        }
+    }
+
     pub fn to_mpd_syntax(&self) -> &'static str {
         match self {
+            Self::Equals => "==",
             Self::LessThan => "<",
             Self::GreaterThan => ">",
             Self::Contains => "contains",

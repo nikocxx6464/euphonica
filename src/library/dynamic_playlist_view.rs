@@ -4,28 +4,25 @@ use gtk::{
     glib::{self, closure_local},
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
-use std::{cell::Cell, cmp::Ordering, rc::Rc};
+use std::{cell::{Cell, OnceCell}, sync::OnceLock, cmp::Ordering, rc::Rc};
 
 use glib::clone;
+use glib::subclass::Signal;
+use glib::Properties;
+use glib::WeakRef;
 
 use super::{Library, DynamicPlaylistContentView};
 use crate::{
     cache::Cache,
     client::{ClientState, ConnectionState},
-    common::INode,
-    library::{playlist_row::PlaylistRow, DynamicPlaylistEditorView},
+    common::{DynamicPlaylist, INode},
+    library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
     utils::{g_cmp_str_options, g_search_substr, settings_manager},
     window::EuphonicaWindow
 };
 
 // DynamicPlaylist view implementation
 mod imp {
-    use std::{cell::OnceCell, sync::OnceLock};
-
-    use glib::{subclass::Signal, Properties};
-
-    // use crate::library::DynamicPlaylistContentView;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -73,8 +70,10 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub client_state: WeakRef<ClientState>,
+        pub window: WeakRef<EuphonicaWindow>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
     }
@@ -162,24 +161,23 @@ impl DynamicPlaylistView {
 
     pub fn setup(
         &self,
-        library: Library,
+        library: &Library,
         cache: Rc<Cache>,
-        client_state: ClientState,
+        client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(library.clone(), client_state.clone(), cache.clone());
+        content_view.setup(self, library.clone(), client_state.clone(), cache.clone());
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
-        self.imp()
-            .library
-            .set(library.clone())
-            .expect("Cannot init DynamicPlaylistView with Library");
+        self.imp().library.set(Some(library));
         self.imp()
             .cache
             .set(cache.clone())
             .expect("Cannot init DynamicPlaylistView with cache controller");
+        self.imp().client_state.set(Some(client_state));
+        self.imp().window.set(Some(window));
         self.setup_sort();
         self.setup_search();
         self.setup_listview();
@@ -187,12 +185,12 @@ impl DynamicPlaylistView {
         client_state.connect_notify_local(
             Some("connection-state"),
             clone!(
-                #[weak(rename_to = this)]
-                self,
+                #[weak]
+                library,
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.get().unwrap().init_dyn_playlists(false);
+                        library.init_dyn_playlists(false);
                     }
                 }
             ),
@@ -213,18 +211,20 @@ impl DynamicPlaylistView {
                 window,
                 move |_| {
                     let editor = DynamicPlaylistEditorView::default();
-                    editor.setup(library, cache, client_state, &window);
+                    editor.setup(&library, cache, &client_state, &window);
                     editor.connect_closure(
                         "exit-clicked",
                         false,
                         closure_local!(
                             #[weak]
                             this,
+                            #[weak]
+                            library,
                             move |_: DynamicPlaylistEditorView, should_refresh: bool| {
-                                this.imp().nav_view.pop_to_tag("list");
                                 if should_refresh {
-                                    this.imp().library.get().unwrap().init_dyn_playlists(true);
+                                    library.init_dyn_playlists(true);
                                 }
+                                this.imp().nav_view.pop();
                             }
                         )
                     );
@@ -238,6 +238,45 @@ impl DynamicPlaylistView {
                     );
                 }
             ));
+    }
+
+    pub fn edit_playlist(&self, dp: DynamicPlaylist) {
+        let editor = DynamicPlaylistEditorView::default();
+        let library = self.imp().library.upgrade().unwrap();
+        editor.setup(
+            &library,
+            self.imp().cache.get().unwrap().clone(),
+            &self.imp().client_state.upgrade().unwrap(),
+            &self.imp().window.upgrade().unwrap()
+        );
+        editor.init(dp);
+        editor.connect_closure(
+            "exit-clicked",
+            false,
+            closure_local!(
+                #[weak(rename_to = this)]
+                self,
+                #[weak]
+                library,
+                move |editor: DynamicPlaylistEditorView, should_refresh: bool| {
+                    let content_view = this.imp().content_view.get();
+                    content_view.unbind();
+                    content_view.bind_by_name(editor.get_current_name().as_str());
+                    if should_refresh {
+                        library.init_dyn_playlists(true);
+                    }
+                    this.imp().nav_view.pop();
+                }
+            )
+        );
+
+        self.imp().nav_view.push(
+            &adw::NavigationPage::builder()
+                .tag("editor")
+                .title("Edit Dynamic Playlist")
+                .child(&editor)
+                .build()
+        );
     }
 
     fn setup_sort(&self) {
@@ -427,7 +466,7 @@ impl DynamicPlaylistView {
     }
 
     fn setup_listview(&self) {
-        let library = self.imp().library.get().unwrap();
+        let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         // Setup search bar
         let search_bar = self.imp().search_bar.get();

@@ -59,7 +59,7 @@ create table if not exists `query_results` (
     `query_name` VARCHAR not null,
     `uri` VARCHAR not null
 );
-create unique index if not exists `query_results_key` on `query_results` (
+create index if not exists `query_results_key` on `query_results` (
     `query_name`
 );
 
@@ -254,7 +254,7 @@ create table if not exists `query_results` (
     `query_name` VARCHAR not null,
     `uri` VARCHAR not null
 );
-create unique index if not exists `query_results_key` on `query_results` (
+create index if not exists `query_results_key` on `query_results` (
     `query_name`
 );
 
@@ -265,6 +265,7 @@ end;
                     }
                     e => {panic!("SQLite database error: {e:?}");}
                 }
+
             }
             _ => {}
         }
@@ -815,18 +816,34 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str
 
         // Migrate image cache entry (if one exists) to new name
         if to_overwrite != dp.name {
-            tx
-                .execute("update queries set key = ?1 where key = ?2", params![
-                    &"dynamic_playlist:".to_string()
-                ]);
+            if let Err(db_err) = tx
+                .execute("update images set key = ?1 where key = ?2", params![
+                    &format!("dynamic_playlist:{}", to_overwrite),
+                    &format!("dynamic_playlist:{}", dp.name),
+                ]) {
+                    tx.rollback().map_err(Error::DbError)?;
+                    return Err(Error::DbError(db_err));
+                }
         }
     }
 
     // Bail out if current name already exists. The overwriting case should have already
     // removed the existing option in the above logic.
-    if exists_dynamic_playlist(&dp.name)? {
-        tx.rollback().map_err(Error::DbError)?;
-        return Err(Error::KeyAlreadyExists);
+    // We can't use exists_dynamic_playlist() here as the check has to be part of this
+    // transaction.
+    let count_res = tx.query_one(
+        "select count(name) from queries where name = ?1",
+        params![&dp.name], |r| r.get::<usize, usize>(0)
+    );
+    match count_res {
+        Ok(count) => {
+            if count > 0 {
+                tx.rollback().map_err(Error::DbError)?;
+                return Err(Error::KeyAlreadyExists);
+            }
+        }
+        Err(SqliteError::QueryReturnedNoRows) => {}
+        Err(e) => { return Err(Error::DbError(e));}
     }
 
     let last_queued = dp

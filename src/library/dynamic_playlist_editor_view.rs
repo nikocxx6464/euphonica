@@ -1,7 +1,7 @@
 use adw::prelude::*;
 use adw::subclass::prelude::*;
 use ashpd::desktop::file_chooser::SelectedFiles;
-use glib::{clone, closure_local};
+use glib::{clone, closure_local, WeakRef};
 use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
 use uuid::Uuid;
 use std::{
@@ -105,11 +105,11 @@ mod imp {
         pub unsaved: Cell<bool>,
         pub editing_name: RefCell<Option<String>>,  // If not None, will be in edit mode.
 
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "RefCell::new(String::from(\"\"))"))]
         pub tmp_name: RefCell<String>,
-        pub window: OnceCell<EuphonicaWindow>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub filepath_sender: OnceCell<Sender<String>>,
     }
 
@@ -150,6 +150,7 @@ mod imp {
                 self,
                 move |_| {
                     this.obj().validate_title();
+                    this.obj().on_change();
                 }
             ));
 
@@ -178,11 +179,18 @@ mod imp {
             ));
 
             // TODO: find another way as observe_children() is very inefficient
-            let _ = self.rules_model.set(
-                self.rules_box.observe_children()
-            );
-            self.obj().validate_rules();
-
+            let obj = self.obj();
+            let rules_model = self.rules_box.observe_children();
+            rules_model.connect_items_changed(clone!(
+                #[weak]
+                obj,
+                move |_, _, _, _| {
+                    obj.validate_rules();
+                    obj.on_change();
+                }
+            ));
+            let _ = self.rules_model.set(rules_model);
+            obj.validate_rules();
             self.add_rule_btn.connect_clicked(clone!(
                 #[weak(rename_to = this)]
                 self,
@@ -194,6 +202,8 @@ mod imp {
                         add_btn,
                         Some(&btn)
                     );
+                    // Validate once at creation
+                    btn.validate();
                     btn.connect_notify_local(
                         Some("is-valid"),
                         clone!(
@@ -201,16 +211,14 @@ mod imp {
                             this,
                             move |_, _| {
                                 this.obj().validate_rules();
+                                this.obj().on_change();
                             }
                         )
                     );
-                    // Validate once at creation
-                    btn.validate();
-                    this.obj().validate_rules();
                 }
             ));
 
-            let obj = self.obj();
+
             // TODO: find another way as observe_children() is very inefficient
             let orderings_model = self.ordering_box.observe_children();
             orderings_model.connect_items_changed(clone!(
@@ -218,6 +226,7 @@ mod imp {
                 obj,
                 move |_, _, _, _| {
                     obj.on_ordering_changed();
+                    obj.on_change();
                 }
             ));
             let _ = self.orderings_model.set(orderings_model);
@@ -365,8 +374,8 @@ impl Default for DynamicPlaylistEditorView {
 }
 
 impl DynamicPlaylistEditorView {
-    fn get_library(&self) -> Option<&Library> {
-        self.imp().library.get()
+    fn get_library(&self) -> Option<Library> {
+        self.imp().library.upgrade()
     }
 
     fn get_cache(&self) -> Option<&Rc<Cache>> {
@@ -402,20 +411,17 @@ impl DynamicPlaylistEditorView {
 
     pub fn setup(
         &self,
-        library: Library,
+        library: &Library,
         cache: Rc<Cache>,
-        client_state: ClientState,
+        client_state: &ClientState,
         window: &EuphonicaWindow
     ) {
         self.imp()
            .cache
            .set(cache.clone())
            .expect("DynamicPlaylistEditorView cannot bind to cache");
-        self.imp()
-           .window
-           .set(window.clone())
-           .expect("DynamicPlaylistEditorView cannot bind to window");
-        self.imp().library.set(library).expect("Could not register DynamicPlaylistEditorView with library controller");
+        self.imp().window.set(Some(window));
+        self.imp().library.set(Some(library));
 
         self.imp().cover_btn.connect_clicked(clone!(
             #[weak(rename_to = this)]
@@ -588,8 +594,6 @@ impl DynamicPlaylistEditorView {
         if old_valid != is_valid {
             self.update_sensitivity();
         }
-
-        self.on_change();
     }
 
     fn validate_rules(&self) {
@@ -619,8 +623,6 @@ impl DynamicPlaylistEditorView {
         if old_rules_valid != new_rules_valid {
             self.update_sensitivity();
         }
-
-        self.on_change();
     }
 
     /// Never allow the ordering section to fall into an invalid state by enforcing
@@ -674,8 +676,6 @@ impl DynamicPlaylistEditorView {
                 }
             }
         }
-
-        self.on_change();
     }
 
     fn update_sensitivity(&self) {
@@ -747,6 +747,19 @@ impl DynamicPlaylistEditorView {
         }
     }
 
+    fn set_refresh_schedule(&self, auto_refresh: AutoRefresh) {
+        self.imp().refresh_schedule.set_selected(
+            match auto_refresh {
+                AutoRefresh::None => 0,
+                AutoRefresh::Hourly => 1,
+                AutoRefresh::Daily => 2,
+                AutoRefresh::Weekly => 3,
+                AutoRefresh::Monthly => 4,
+                AutoRefresh::Yearly => 5,
+            }
+        );
+    }
+
     fn preview_result(&self) {
         self.imp().refresh_btn.set_sensitive(false);
         self.imp().content_pages.set_visible_child_name("spinner");
@@ -762,7 +775,7 @@ impl DynamicPlaylistEditorView {
         println!("{:?}", &dp);
 
         // Don't cache as this DP is still being edited
-        self.imp().library.get().unwrap().fetch_dynamic_playlist(dp, false);
+        self.get_library().unwrap().fetch_dynamic_playlist(dp, false);
     }
 
     fn build_dynamic_playlist(&self) -> DynamicPlaylist {
@@ -913,79 +926,77 @@ impl DynamicPlaylistEditorView {
     }
 
     pub fn init(&self, dp: DynamicPlaylist) {
-        // let title_label = self.imp().title.get();
-        // let artists_box = self.imp().artists_box.get();
-        // let rating = self.imp().rating.get();
-        // let release_date_label = self.imp().release_date.get();
-        // let mut bindings = self.imp().bindings.borrow_mut();
+        let imp = self.imp();
+        // Set editor into edit mode and not "create new"
+        imp.editing_name.replace(Some(dp.name.clone()));
+        imp.title.set_text(&dp.name);
 
-        // let title_binding = album
-        //     .bind_property("title", &title_label, "label")
-        //     .transform_to(|_, s: Option<&str>| {
-        //         Some(if s.is_none_or(|s| s.is_empty()) {
-        //             (*EMPTY_ALBUM_STRING).to_value()
-        //         } else {
-        //             s.to_value()
-        //         })
-        //     })
-        //     .sync_create()
-        //     .build();
-        // // Save binding
-        // bindings.push(title_binding);
+        // Init cover
+        self.schedule_existing_cover(&dp);
 
-        // // Populate artist tags
-        // let artist_tags = album.get_artists().iter().map(
-        //     |info| ArtistTag::new(
-        //         Artist::from(info.clone()),
-        //         self.imp().cache.get().unwrap().clone(),
-        //         self.imp().window.get().unwrap()
-        //     )
-        // ).collect::<Vec<ArtistTag>>();
-        // self.imp().artist_tags.extend_from_slice(&artist_tags);
-        // for tag in artist_tags {
-        //     artists_box.append(&tag);
-        // }
+        // Init rules
+        let rules_box = imp.rules_box.get();
+        let add_btn = imp.add_rule_btn.get();
+        let mut last_btn: Option<RuleButton> = None;
+        for rule in dp.rules.into_iter() {
+            let btn = RuleButton::from_rule(rule);
+            rules_box.append(&btn);
+            // Validate once at creation
+            btn.validate();
+            btn.connect_notify_local(
+                Some("is-valid"),
+                clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    move |_, _| {
+                        this.validate_rules();
+                        this.on_change();
+                    }
+                )
+            );
+            last_btn.replace(btn);
+        }
+        if let Some(last_btn) = last_btn {
+            rules_box.reorder_child_after(
+                &add_btn,
+                Some(&last_btn)
+            );
+        }
 
-        // let rating_binding = album
-        //     .bind_property("rating", &rating, "value")
-        //     .sync_create()
-        //     .build();
-        // // Save binding
-        // bindings.push(rating_binding);
+        // Init orderings
+        let ordering_box = imp.ordering_box.get();
+        let add_btn = imp.add_ordering_btn.get();
+        let mut last_btn: Option<OrderingButton> = None;
+        for ordering in dp.ordering.into_iter() {
+            let btn = OrderingButton::new(ordering);
+            ordering_box.append(&btn);
+            btn.connect_clicked(clone!(
+                #[weak]
+                ordering_box,
+                move |btn| {
+                    ordering_box.remove(btn);
+                }
+            ));
+            last_btn.replace(btn);
+        }
+        if let Some(last_btn) = last_btn {
+            ordering_box.reorder_child_after(
+                &add_btn,
+                Some(&last_btn)
+            );
+        }
 
-        // self.update_meta(&album);
-        // let release_date_binding = album
-        //     .bind_property("release_date", &release_date_label, "label")
-        //     .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
-        //         let format = format_description::parse("[year]-[month]-[day]")
-        //             .ok()
-        //             .unwrap();
-        //         if let Some(release_date) = boxed_date.borrow::<Option<Date>>().as_ref() {
-        //             return release_date.format(&format).ok();
-        //         }
-        //         Some("-".to_owned())
-        //     })
-        //     .sync_create()
-        //     .build();
-        // // Save binding
-        // bindings.push(release_date_binding);
+        self.validate_rules();
+        self.on_ordering_changed();
 
-        // let release_date_viz_binding = album
-        //     .bind_property("release_date", &release_date_label, "visible")
-        //     .transform_to(|_, boxed_date: glib::BoxedAnyObject| {
-        //         if boxed_date.borrow::<Option<Date>>().is_some() {
-        //             return Some(true);
-        //         }
-        //         Some(false)
-        //     })
-        //     .sync_create()
-        //     .build();
-        // // Save binding
-        // bindings.push(release_date_viz_binding);
+        // Init the other settings
+        self.set_refresh_schedule(dp.auto_refresh);
+        if let Some(limit) = dp.limit {
+            imp.limit_mode.set_selected(1);
+            imp.limit.set_value(limit as f64);
+        }
 
-        // let info = album.get_info();
-        // self.schedule_cover(info);
-        // self.imp().album.borrow_mut().replace(album);
+        self.imp().unsaved.set(false);
     }
 
     fn add_songs(&self, songs: &[Song]) {
@@ -1015,5 +1026,9 @@ impl DynamicPlaylistEditorView {
                 })
                 .sum::<u64>() as f64,
         ));
+    }
+
+    pub fn get_current_name(&self) -> String {
+        self.imp().title.text().to_string()
     }
 }

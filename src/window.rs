@@ -879,9 +879,9 @@ impl EuphonicaWindow {
             app.get_cache()
         );
         win.imp().dyn_playlist_view.setup(
-            app.get_library(),
+            &app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             &win,
         );
         win.imp().playlist_view.setup(
