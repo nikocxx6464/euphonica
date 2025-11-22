@@ -13,7 +13,7 @@ use glib::WeakRef;
 
 use super::{Library, DynamicPlaylistContentView};
 use crate::{
-    cache::Cache,
+    cache::{Cache, sqlite},
     client::{ClientState, ConnectionState},
     common::{DynamicPlaylist, INode},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
@@ -155,8 +155,19 @@ impl DynamicPlaylistView {
         res
     }
 
-    pub fn pop(&self) {
-        self.imp().nav_view.pop();
+    pub fn delete(&self, name: &str) {
+        if let Some(library) = self.imp().library.upgrade() {
+            self.imp().nav_view.pop();
+            self.imp().content_view.unbind();
+            match sqlite::delete_dynamic_playlist(name) {
+                Ok(_) => {
+                    library.init_dyn_playlists(true);
+                }
+                Err(err) => {
+                    dbg!(err);
+                }
+            };
+        }
     }
 
     pub fn setup(
@@ -167,7 +178,7 @@ impl DynamicPlaylistView {
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(self, library.clone(), client_state.clone(), cache.clone());
+        content_view.setup(self, &library, &client_state, cache.clone());
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });

@@ -633,6 +633,35 @@ impl Library {
         );
     }
 
+    /// Delete a dynamic playlist by name. Will also remove cover entries.
+    pub fn delete_dynamic_playlist(&self, name: &str) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                match gio::spawn_blocking(|| {
+                    sqlite::get_dynamic_playlists()
+                }).await.unwrap() {
+                    Ok(inode_infos) => {
+                        println!("Received {} dynamic playlists", inode_infos.len());
+                        this.imp()
+                            .dyn_playlists
+                            .extend_from_slice(
+                                &inode_infos
+                                    .into_iter()
+                                    .map(INode::from)
+                                    .collect::<Vec<INode>>()
+                            );
+                        this.imp().dyn_playlists_initialized.set(true);
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            }
+        ));
+    }
+
     pub fn get_folder_contents(&self) {
         if !self.imp().folder_inodes_initialized.get() {
             self.client()

@@ -1,6 +1,10 @@
+use adw::prelude::*;
 use adw::subclass::prelude::*;
+use ashpd::desktop::file_chooser::SelectedFiles;
 use glib::{clone, closure_local, signal::SignalHandlerId};
-use gtk::{gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
+use gio::{ActionEntry, SimpleActionGroup};
+use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
+use glib::WeakRef;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -8,21 +12,21 @@ use std::{
 use derivative::Derivative;
 use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
-    cache::{placeholders::ALBUMART_PLACEHOLDER, sqlite, Cache},
+    cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::ClientState,
-    common::{ContentView, Song, SongRow},
-    utils::format_secs_as_duration,
+    common::{ContentView, DynamicPlaylist, Song, SongRow},
+    utils::{self, format_secs_as_duration},
 };
 
 mod imp {
-    use crate::common::DynamicPlaylist;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
     #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/dynamic-playlist-content-view.ui")]
     pub struct DynamicPlaylistContentView {
+        #[template_child]
+        pub delete_dialog: TemplateChild<adw::AlertDialog>,
         #[template_child]
         pub inner: TemplateChild<ContentView>,
         #[template_child]
@@ -58,7 +62,8 @@ mod imp {
         pub artist_tags: gio::ListStore,
 
         pub dp: RefCell<Option<DynamicPlaylist>>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
+        pub outer: WeakRef<DynamicPlaylistView>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
     }
@@ -99,7 +104,7 @@ mod imp {
                 #[upgrade_or]
                 (),
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.get(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
                         let spinner = this.content_spinner.get();
                         if spinner.visible_child_name().unwrap() != "spinner" {
                             spinner.set_visible_child_name("spinner");
@@ -119,7 +124,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.get(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
                         library.queue_cached_dynamic_playlist(&dp.name, true, true);
                     }
                 }
@@ -129,18 +134,119 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let (Some(library), Some(dp)) = (this.library.get(), this.dp.borrow_mut().as_ref()) {
+                    if let (Some(library), Some(dp)) = (this.library.upgrade(), this.dp.borrow_mut().as_ref()) {
                         library.queue_cached_dynamic_playlist(&dp.name, false, false);
                     }
                 }
             ));
+
+            // Ellipsis menu actions
+            let action_delete = ActionEntry::builder("delete")
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        let name: Option<String>;
+                        {
+                            name = this.dp.borrow().as_ref().map(|dp| dp.name.to_string());
+                        }
+                        if let (Some(name), Some(outer)) = (name, this.outer.upgrade()) {
+                            let dialog = this.delete_dialog.get();
+                            let obj = this.obj();
+                            dialog.choose(
+                                obj.as_ref(),
+                                Option::<gio::Cancellable>::None.as_ref(),
+                                clone!(
+                                    #[weak]
+                                    outer,
+                                    move |resp| {
+                                        if resp == "delete" {
+                                            outer.delete(&name);
+                                        }
+                                    }
+                                ),
+                            );
+                        }
+                    }
+                ))
+                .build();
+
+            let action_export_json = ActionEntry::builder("export-json")
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        let dp: Option<DynamicPlaylist>;
+                        {
+                            // Copy & end borrow
+                            dp = this.dp.borrow().to_owned();
+                        }
+                        if let Some(dp) = dp {
+                            let name = dp.name.to_string();
+                            let (sender, receiver) = async_channel::unbounded();
+                            utils::tokio_runtime().spawn(async move {
+                                let maybe_files = SelectedFiles::save_file()
+                                    .title("Export Dynamic Playlist")
+                                    .modal(true)
+                                    .current_name(Some(format!("{}.edp.json", &name).as_str()))
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response();
+
+                                match maybe_files {
+                                    Ok(files) => {
+                                        let uris = files.uris();
+                                        if !uris.is_empty() {
+                                            let _ = sender.send_blocking(uris[0].to_string());
+                                        } else {
+                                            let _ = sender.send_blocking("".to_string());
+                                        }
+                                    }
+                                    Err(err) => {
+                                        dbg!(err);
+                                    }
+                                }
+                            });
+                            glib::spawn_future_local(
+                                async move {
+                                    use futures::prelude::*;
+                                    let mut receiver = std::pin::pin!(receiver);
+                                    if let Some(path) = receiver.next().await {
+                                        if !path.is_empty() {
+                                            // Assume ashpd always return filesystem spec
+                                            let filepath = urlencoding::decode(if path.starts_with("file://") {
+                                                &path[7..]
+                                            } else {
+                                                &path
+                                            }).expect("Path must be in UTF-8").into_owned();
+                                            utils::export_to_json(&dp, &filepath).expect("Unable to write file");
+                                        }
+                                    }
+                                }
+                            );
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_delete,
+                action_export_json,
+            ]);
+            self.obj().insert_action_group("dp-content-view", Some(&actions));
         }
     }
 
     impl WidgetImpl for DynamicPlaylistContentView {}
 
-    impl DynamicPlaylistContentView {
-    }
+    impl DynamicPlaylistContentView {}
 }
 
 glib::wrapper! {
@@ -156,12 +262,13 @@ impl Default for DynamicPlaylistContentView {
 }
 
 impl DynamicPlaylistContentView {
-    fn get_library(&self) -> Option<&Library> {
-        self.imp().library.get()
+    pub fn get_library(&self) -> Option<Library> {
+        self.imp().library.upgrade()
     }
 
-    pub fn setup(&self, outer: &DynamicPlaylistView, library: Library, client_state: ClientState, cache: Rc<Cache>) {
-        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
+    pub fn setup(&self, outer: &DynamicPlaylistView, library: &Library, client_state: &ClientState, cache: Rc<Cache>) {
+        self.imp().library.set(Some(library));
+        self.imp().outer.set(Some(outer));
 
         client_state.connect_closure(
             "dynamic-playlist-songs-downloaded",

@@ -106,6 +106,7 @@ impl FromStr for AutoRefresh {
         match s {
             "none" => Ok(Self::None),
             "hourly" => Ok(Self::Hourly),
+            "daily" => Ok(Self::Daily),
             "weekly" => Ok(Self::Weekly),
             "monthly" => Ok(Self::Monthly),
             "yearly" => Ok(Self::Yearly),

@@ -6,10 +6,13 @@ use gtk::Ordering;
 use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
+use serde::Serialize;
 use time::OffsetDateTime;
 use time::UtcOffset;
 use time::format_description::{parse_owned, OwnedFormatItem};
 use time::error::IndeterminateOffset;
+use std::fs::File;
+use std::io::BufWriter;
 use std::sync::OnceLock;
 use std::fmt::Write;
 use std::time::SystemTime;
@@ -329,4 +332,20 @@ pub fn rebuild_artist_delim_exception_automaton() {
 pub trait LazyInit {
     fn clear(&self);
     fn populate(&self);
+}
+
+
+/// Exports any type that implements Serialize to a JSON file.
+///
+/// # Arguments
+/// * `data` - A reference to the struct to serialize.
+/// * `file_path` - The path where the JSON file will be saved. Assume we have
+/// write access to this path already.
+pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(file_path)?;
+    // Use BufWriter for better performance (reduces system calls).
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, data)?;
+
+    Ok(())
 }

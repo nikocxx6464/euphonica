@@ -908,7 +908,7 @@ pub fn cache_dynamic_playlist_results(
             OffsetDateTime::now_utc(),
             name
         ]
-    );
+    )?;
 
     tx.commit()?;
     Ok(())
@@ -961,4 +961,19 @@ pub fn get_cached_dynamic_playlist_results(
         .map(|r| r.unwrap())
         .collect::<Vec<String>>()
     )
+}
+
+pub fn delete_dynamic_playlist(name: &str) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction()?;
+    tx
+        .execute("delete from queries where name = ?1", params![name])
+        .map_err(Error::DbError)?;
+
+    tx
+        .execute("delete from images where key = ?1", params![&format!("dynamic_playlist:{}", name)])
+        .map_err(Error::DbError)?;
+
+    tx.commit()?;
+    Ok(())
 }
