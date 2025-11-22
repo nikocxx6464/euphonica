@@ -444,7 +444,9 @@ impl DynamicPlaylistContentView {
                         // yet, use it. Else resolve rules from scratch.
                         if let Some(last_refresh) = dp.last_refresh {
                             // Check whether we need to perform an auto-refresh
-                            if OffsetDateTime::now_utc().unix_timestamp() - last_refresh < match dp.auto_refresh {
+                            if dp.auto_refresh != AutoRefresh::None &&
+                                OffsetDateTime::now_utc().unix_timestamp() - last_refresh > match dp.auto_refresh
+                            {
                                 AutoRefresh::None => i64::MAX,
                                 AutoRefresh::Hourly => 3600,
                                 AutoRefresh::Daily => 86400,

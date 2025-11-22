@@ -83,7 +83,7 @@ impl Ordering {
     }
 }
 
-#[derive(Default, Debug, Copy, Clone, Serialize, Deserialize)]
+#[derive(Default, Debug, Copy, Clone, Serialize, Deserialize, Eq, PartialEq, PartialOrd)]
 pub enum AutoRefresh {
     #[default]
     #[serde(rename = "none")]
