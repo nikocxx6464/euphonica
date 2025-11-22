@@ -514,18 +514,10 @@ impl QueueView {
 }
 
 impl LazyInit for QueueView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising queue");
-                if let Some(status) = player.client().get_status(true) {
-                    player.update_status(&status);
-                }
+            if let Some(status) = player.client().get_status(true) {
+                player.update_status(&status);
             }
         }
     }

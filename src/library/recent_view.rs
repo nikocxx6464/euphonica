@@ -7,7 +7,7 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 
-use glib::{clone, closure_local, Properties};
+use glib::{clone, closure_local, Properties, WeakRef};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
@@ -62,12 +62,10 @@ mod imp {
         #[template_child]
         pub song_list: TemplateChild<gtk::ListBox>,
 
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>,
-
-        pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
+        pub collapsed: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -114,7 +112,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.library.get().unwrap().clear_recent_songs();
+                    this.library.upgrade().unwrap().clear_recent_songs();
                     this.obj().on_history_changed();
                 }
             ));
@@ -204,17 +202,15 @@ impl RecentView {
 
     pub fn setup(
         &self,
-        library: Library,
-        player: Player,
+        library: &Library,
+        player: &Player,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init RecentView with Library");
+            .set(Some(library));
 
-        self.on_history_changed();
         player.connect_closure(
             "history-changed",
             false,
@@ -233,16 +229,14 @@ impl RecentView {
     }
 
     pub fn on_history_changed(&self) {
-        if self.imp().initialized.get() {
-            let library = self.imp().library.get().unwrap();
-            library.fetch_recent_albums();
-            library.fetch_recent_artists();
-            library.fetch_recent_songs();
-        }
+        let library = self.imp().library.upgrade().unwrap();
+        library.fetch_recent_albums();
+        library.fetch_recent_artists();
+        library.fetch_recent_songs();
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
-        let album_list = self.imp().library.get().unwrap().recent_albums();
+        let album_list = self.imp().library.upgrade().unwrap().recent_albums();
 
         album_list
             .bind_property(
@@ -345,7 +339,7 @@ impl RecentView {
     }
 
     fn setup_artist_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
-        let artist_list = self.imp().library.get().unwrap().recent_artists();
+        let artist_list = self.imp().library.upgrade().unwrap().recent_artists();
 
         artist_list
             .bind_property(
@@ -439,7 +433,7 @@ impl RecentView {
     }
 
     fn setup_song_list(&self, cache: Rc<Cache>) {
-        let library = self.imp().library.get().unwrap().clone();
+        let library = self.imp().library.upgrade().unwrap().clone();
         let song_list = library.recent_songs();
 
         song_list
@@ -486,15 +480,7 @@ impl RecentView {
 }
 
 impl LazyInit for RecentView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
-        let was_populated = self.imp().initialized.replace(true);
-        if !was_populated {
-            println!("Initialising recents");
-            self.on_history_changed();
-        }
+        self.on_history_changed();
     }
 }

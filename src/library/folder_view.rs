@@ -4,8 +4,9 @@ use gtk::{
     glib,
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
-use std::{cell::Cell, cmp::Ordering, rc::Rc};
-use glib::clone;
+use once_cell::sync::Lazy;
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
+use glib::{clone, WeakRef, subclass::Signal, ParamSpec, ParamSpecBoolean};
 
 use super::{generic_row::GenericRow, Library};
 use crate::{
@@ -38,11 +39,6 @@ use crate::{
 // 2. Repeat steps 3-5 as above. If curr_idx is 0 after decrementing, simply use ""
 // as path.
 mod imp {
-    use std::{cell::OnceCell, sync::OnceLock};
-
-    use glib::{subclass::Signal, ParamSpec, ParamSpecBoolean};
-    use once_cell::sync::Lazy;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Default)]
@@ -84,9 +80,8 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
-        pub collapsed: Cell<bool>,
-        pub initialized: Cell<bool>
+        pub library: WeakRef<Library>,
+        pub collapsed: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -119,7 +114,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.get() {
+                    if let Some(lib) = this.library.upgrade() {
                         lib.folder_backward();
                     }
                 }
@@ -129,7 +124,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    if let Some(lib) = this.library.get() {
+                    if let Some(lib) = this.library.upgrade() {
                         lib.folder_forward();
                     }
                 }
@@ -196,7 +191,7 @@ mod imp {
 
     impl FolderView {
         pub fn update_nav_btn_sensitivity(&self) {
-            let lib = self.library.get().unwrap();
+            let lib = self.library.upgrade().unwrap();
             let curr_idx = lib.folder_curr_idx();
             let hist_len = lib.folder_history_len();
             // println!("Curr idx: {}", curr_idx);
@@ -232,15 +227,14 @@ impl FolderView {
         glib::Object::new()
     }
 
-    fn library(&self) -> &Library {
-        self.imp().library.get().unwrap()
+    fn library(&self) -> Library {
+        self.imp().library.upgrade().unwrap()
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>) {
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init FolderView with Library");
+            .set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_listview(cache.clone(), library.clone());
@@ -527,17 +521,9 @@ impl FolderView {
 }
 
 impl LazyInit for FolderView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising inodes");
-                library.get_folder_contents();
-            }
+        if let Some(library) = self.imp().library.upgrade() {
+            library.get_folder_contents();
         }
     }
 }

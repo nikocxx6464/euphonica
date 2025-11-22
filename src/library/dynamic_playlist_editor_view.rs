@@ -109,8 +109,7 @@ mod imp {
         pub cache: OnceCell<Rc<Cache>>,
         #[derivative(Default(value = "RefCell::new(String::from(\"\"))"))]
         pub tmp_name: RefCell<String>,
-        pub window: WeakRef<EuphonicaWindow>,
-        pub filepath_sender: OnceCell<Sender<String>>,
+        pub window: WeakRef<EuphonicaWindow>
     }
 
     #[glib::object_subclass]
@@ -383,30 +382,44 @@ impl DynamicPlaylistEditorView {
     }
 
     fn open_cover_file_dialog(&self) {
-        if let Some(sender) = self.imp().filepath_sender.get() {
-            let sender = sender.clone();
-            tokio_runtime().spawn(async move {
-                match SelectedFiles::open_file()
-                    .title("Select a new cover image")
-                    .modal(true)
-                    .multiple(false)
-                    .send()
-                    .await
-                    .expect("ashpd file open await failure")
-                    .response()
-                {
-                    Ok(files) => {
-                        let uris = files.uris();
-                        if !uris.is_empty() {
-                            let _ = sender.send_blocking(uris[0].to_string());
-                        }
-                    }
-                    Err(e) => {
-                        dbg!(e);
+        let (sender, receiver) = async_channel::unbounded();
+        tokio_runtime().spawn(async move {
+            match SelectedFiles::open_file()
+                .title("Select a new cover image")
+                .modal(true)
+                .multiple(false)
+                .send()
+                .await
+                .expect("ashpd file open await failure")
+                .response()
+            {
+                Ok(files) => {
+                    let uris = files.uris();
+                    if !uris.is_empty() {
+                        let _ = sender.send_blocking(uris[0].to_string());
                     }
                 }
-            });
-        }
+                Err(e) => {
+                    dbg!(e);
+                }
+            }
+        });
+        glib::MainContext::default().spawn_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            #[upgrade_or]
+            (),
+            async move {
+                use futures::prelude::*;
+                // Allow receiver to be mutated, but keep it at the same memory address.
+                // See Receiver::next doc for why this is needed.
+                let mut receiver = std::pin::pin!(receiver);
+
+                if let Some(path) = receiver.next().await {
+                    this.set_cover_path(&path);
+                }
+            }
+        ));
     }
 
     pub fn setup(
@@ -472,27 +485,6 @@ impl DynamicPlaylistEditorView {
                 }
             ),
         );
-
-        // Set up channel for listening to cover path dialog
-        // It is in these situations that Rust's lack of a standard async library bites hard.
-        let (sender, receiver) = async_channel::unbounded::<String>();
-        let _ = self.imp().filepath_sender.set(sender);
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            (),
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                while let Some(path) = receiver.next().await {
-                    this.set_cover_path(&path);
-                }
-            }
-        ));
 
         // Set up factory
         let factory = SignalListItemFactory::new();

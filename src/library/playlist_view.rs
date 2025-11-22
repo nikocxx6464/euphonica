@@ -6,22 +6,18 @@ use gtk::{
 };
 use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
 
-use glib::clone;
+use glib::{clone, WeakRef, subclass::Signal, Properties};
 use mpd::Subsystem;
+use std::{cell::OnceCell, sync::OnceLock};
 
 use super::Library;
 use crate::{
+    library::PlaylistContentView,
     cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow
 };
 
 // Playlist view implementation
 mod imp {
-    use std::{cell::OnceCell, sync::OnceLock};
-
-    use glib::{subclass::Signal, Properties};
-
-    use crate::library::PlaylistContentView;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -64,7 +60,7 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
@@ -153,9 +149,9 @@ impl PlaylistView {
 
     pub fn setup(
         &self,
-        library: Library,
+        library: &Library,
         cache: Rc<Cache>,
-        client_state: ClientState,
+        client_state: &ClientState,
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
@@ -165,8 +161,7 @@ impl PlaylistView {
         });
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init PlaylistView with Library");
+            .set(Some(library));
         self.imp()
             .cache
             .set(cache.clone())
@@ -183,7 +178,7 @@ impl PlaylistView {
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.get().unwrap().init_playlists();
+                        this.imp().library.upgrade().unwrap().init_playlists();
                     }
                 }
             ),
@@ -197,7 +192,7 @@ impl PlaylistView {
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
                     if subsys.borrow::<Subsystem>().deref() == &Subsystem::Playlist {
-                        let library = this.imp().library.get().unwrap();
+                        let library = this.imp().library.upgrade().unwrap();
                         // Reload playlists
                         library.init_playlists();
                         // Also try to reload content view too, if it's still bound to one.
@@ -419,13 +414,13 @@ impl PlaylistView {
         }
         self.imp()
             .library
-            .get()
+            .upgrade()
             .unwrap()
             .init_playlist(inode.get_name().unwrap());
     }
 
     fn setup_listview(&self) {
-        let library = self.imp().library.get().unwrap();
+        let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         // client_state.connect_closure(
         //     "inode-basic-info-downloaded",

@@ -331,7 +331,6 @@ pub fn rebuild_artist_delim_exception_automaton() {
 /// - Additional checks at the controller level, to prevent new windows (after surfacing from background)
 /// from mistakenly reinitialising already-fetched models.
 pub trait LazyInit {
-    fn clear(&self);
     fn populate(&self);
 }
 

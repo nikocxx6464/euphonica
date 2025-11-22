@@ -227,12 +227,12 @@ impl EuphonicaApplication {
         app
     }
 
-    pub fn get_player(&self) -> Player {
-        self.imp().player.get().unwrap().clone()
+    pub fn get_player(&self) -> &Player {
+        self.imp().player.get().unwrap()
     }
 
-    pub fn get_library(&self) -> Library {
-        self.imp().library.get().unwrap().clone()
+    pub fn get_library(&self) -> &Library {
+        self.imp().library.get().unwrap()
     }
 
     pub fn get_cache(&self) -> Rc<Cache> {

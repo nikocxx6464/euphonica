@@ -1,6 +1,6 @@
 use adw::subclass::prelude::*;
 use gio::{ActionEntry, SimpleActionGroup, Menu};
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding, WeakRef};
 use gtk::{gio, glib, gdk, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell, Cell},
@@ -82,14 +82,13 @@ mod imp {
         pub sel_model: gtk::MultiSelection,
         #[derivative(Default(value = "gio::ListStore::new::<ArtistTag>()"))]
         pub artist_tags: gio::ListStore,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub album: RefCell<Option<Album>>,
-        pub window: OnceCell<EuphonicaWindow>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub selecting_all: Cell<bool>, // Enables queuing the entire album efficiently
-        pub filepath_sender: OnceCell<Sender<String>>,
         pub cover_source: Cell<CoverSource>
     }
 
@@ -171,7 +170,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             library.rate_album(album, None);
                             obj.imp().rating.set_value(-1);
@@ -186,29 +185,43 @@ mod imp {
                     #[upgrade_or]
                     (),
                     move |_, _, _| {
-                        if let Some(sender) = obj.imp().filepath_sender.get() {
-                            let sender = sender.clone();
-                            tokio_runtime().spawn(async move {
-                                let maybe_files = SelectedFiles::open_file()
-                                    .title("Select a new album art")
-                                    .modal(true)
-                                    .multiple(false)
-                                    .send()
-                                    .await
-                                    .expect("ashpd file open await failure")
-                                    .response();
+                        let (sender, receiver) = async_channel::unbounded();
+                        tokio_runtime().spawn(async move {
+                            let maybe_files = SelectedFiles::open_file()
+                                .title("Select a new album art")
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response();
 
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if !uris.is_empty() {
-                                        let _ = sender.send_blocking(uris[0].to_string());
-                                    }
+                            if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    let _ = sender.send_blocking(uris[0].to_string());
                                 }
-                                else {
-                                    println!("{maybe_files:?}");
+                            }
+                            else {
+                                println!("{maybe_files:?}");
+                            }
+                        });
+                        glib::spawn_future_local(clone!(
+                            #[weak]
+                            obj,
+                            #[upgrade_or]
+                            (),
+                            async move {
+                                use futures::prelude::*;
+                                // Allow receiver to be mutated, but keep it at the same memory address.
+                                // See Receiver::next doc for why this is needed.
+                                let mut receiver = std::pin::pin!(receiver);
+
+                                if let Some(path) = receiver.next().await {
+                                    obj.set_cover(&path);
                                 }
-                            });
-                        }
+                            }
+                        ));
                     }
                 ))
                 .build();
@@ -221,7 +234,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             library.clear_cover(album.get_folder_uri());
                         }
@@ -238,7 +251,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(album), Some(library)) = (
                             obj.imp().album.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             let spinner = obj.imp().infobox_spinner.get();
                             if spinner.visible_child_name().unwrap() != "spinner" {
@@ -341,8 +354,8 @@ impl Default for AlbumContentView {
 }
 
 impl AlbumContentView {
-    fn get_library(&self) -> Option<&Library> {
-        self.imp().library.get()
+    fn get_library(&self) -> Option<Library> {
+        self.imp().library.upgrade()
     }
 
     fn update_meta(&self, album: &Album) {
@@ -390,13 +403,13 @@ impl AlbumContentView {
     pub fn set_cover(&self, path: &str) {
         if let (Some(album), Some(library)) = (
             self.imp().album.borrow().as_ref(),
-            self.imp().library.get()
+            self.imp().library.upgrade()
         ) {
             library.set_cover(album.get_folder_uri(), path);
         }
     }
 
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
+    pub fn setup(&self, library: &Library, client_state: &ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
         let cache_state = cache.get_cache_state();
         self.imp()
            .cache
@@ -404,12 +417,11 @@ impl AlbumContentView {
            .expect("AlbumContentView cannot bind to cache");
         self.imp()
            .window
-           .set(window.clone())
-           .expect("AlbumContentView cannot bind to window");
+           .set(Some(window));
         self.imp()
             .add_to_playlist
-            .setup(library.clone(), self.imp().sel_model.clone());
-        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
+            .setup(library, &self.imp().sel_model);
+        self.imp().library.set(Some(library));
         cache_state.connect_closure(
             "album-art-downloaded",
             false,
@@ -593,27 +605,6 @@ impl AlbumContentView {
             }
         ));
 
-        // Set up channel for listening to album art dialog
-        // It is in these situations that Rust's lack of a standard async library bites hard.
-        let (sender, receiver) = async_channel::unbounded::<String>();
-        let _ = self.imp().filepath_sender.set(sender);
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            (),
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                while let Some(path) = receiver.next().await {
-                    this.set_cover(&path);
-                }
-            }
-        ));
-
         // Set up factory
         let factory = SignalListItemFactory::new();
 
@@ -767,7 +758,7 @@ impl AlbumContentView {
             |info| ArtistTag::new(
                 Artist::from(info.clone()),
                 self.imp().cache.get().unwrap().clone(),
-                self.imp().window.get().unwrap()
+                &self.imp().window.upgrade().unwrap()
             )
         ).collect::<Vec<ArtistTag>>();
         self.imp().artist_tags.extend_from_slice(&artist_tags);

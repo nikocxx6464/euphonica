@@ -73,8 +73,7 @@ mod imp {
         pub library: OnceCell<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>,
-        pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
+        pub collapsed: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -154,7 +153,7 @@ impl AlbumView {
         res
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState, window: &EuphonicaWindow) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState, window: &EuphonicaWindow) {
         self.setup_sort();
         self.setup_search();
         self.imp()
@@ -164,7 +163,7 @@ impl AlbumView {
         self.setup_gridview(cache.clone());
 
         let content_view = self.imp().content_view.get();
-        content_view.setup(library.clone(), client_state, cache, window);
+        content_view.setup(library, client_state, cache, window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });
@@ -592,17 +591,9 @@ impl AlbumView {
 }
 
 impl LazyInit for AlbumView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
         if let Some(library) = self.imp().library.get() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising albums");
-                library.init_albums();
-            }
+            library.init_albums();
         }
     }
 }

@@ -1,4 +1,4 @@
-use glib::{clone, Properties};
+use glib::{clone, Properties, WeakRef};
 use gtk::{glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::cell::{Cell, OnceCell};
 
@@ -40,8 +40,8 @@ mod imp {
         pub will_create: Cell<bool>,
         pub search_model: OnceCell<gtk::FilterListModel>,
         pub sel_model: OnceCell<gtk::SingleSelection>, // For playlists
-        pub library: OnceCell<Library>,
-        pub song_sel_model: OnceCell<gtk::MultiSelection>,
+        pub library: WeakRef<Library>,
+        pub song_sel_model: WeakRef<gtk::MultiSelection>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
     }
@@ -177,7 +177,7 @@ mod imp {
                     // As such, as long as we don't pass SaveMode::Replace,
                     // the logic should still be correct.
                     if let (Some(name), Some(song_sel_model)) =
-                        (this.get_name(), this.song_sel_model.get())
+                        (this.get_name(), this.song_sel_model.upgrade())
                     {
                         // Get songs
                         let sel = &song_sel_model.selection();
@@ -198,7 +198,7 @@ mod imp {
                                 songs.push(model.item(idx).and_downcast::<Song>().unwrap());
                             }
                         }
-                        let _ = this.library.get().unwrap().add_songs_to_playlist(
+                        let _ = this.library.upgrade().unwrap().add_songs_to_playlist(
                             &name,
                             &songs,
                             SaveMode::Append,
@@ -305,12 +305,11 @@ impl AddToPlaylistButton {
         glib::Object::new()
     }
 
-    pub fn setup(&self, library: Library, song_sel_model: gtk::MultiSelection) {
+    pub fn setup(&self, library: &Library, song_sel_model: &gtk::MultiSelection) {
         let playlists = library.playlists();
         self.imp()
             .library
-            .set(library)
-            .expect("Failed to initialise AddToPlaylistButton with Library");
+            .set(Some(library));
         self.imp()
             .search_model
             .get()
@@ -318,8 +317,7 @@ impl AddToPlaylistButton {
             .set_model(Some(&playlists));
         self.imp()
             .song_sel_model
-            .set(song_sel_model)
-            .expect("Failed to connect song model to AddToPlaylistButton");
+            .set(Some(song_sel_model));
 
         playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]

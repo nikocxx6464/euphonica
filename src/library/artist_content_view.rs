@@ -1,7 +1,7 @@
 use duplicate::duplicate;
 use adw::subclass::prelude::*;
 use gio::{ActionEntry, SimpleActionGroup};
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding, subclass::Signal};
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding, subclass::Signal, WeakRef};
 use gtk::{gdk, gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell, Cell},
@@ -87,13 +87,12 @@ mod imp {
         #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub album_list: gio::ListStore,
 
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub artist: RefCell<Option<Artist>>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
-        pub filepath_sender: OnceCell<Sender<String>>
+        pub selecting_all: Cell<bool> // Enables queuing all songs from this artist efficiently
     }
 
     #[glib::object_subclass]
@@ -198,29 +197,43 @@ mod imp {
                     #[upgrade_or]
                     (),
                     move |_, _, _| {
-                        if let Some(sender) = obj.imp().filepath_sender.get() {
-                            let sender = sender.clone();
-                            tokio_runtime().spawn(async move {
-                                let maybe_files = SelectedFiles::open_file()
-                                    .title("Select a new avatar")
-                                    .modal(true)
-                                    .multiple(false)
-                                    .send()
-                                    .await
-                                    .expect("ashpd file open await failure")
-                                    .response();
+                        let (sender, receiver) = async_channel::unbounded();
+                        tokio_runtime().spawn(async move {
+                            let maybe_files = SelectedFiles::open_file()
+                                .title("Select a new avatar")
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response();
 
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if !uris.is_empty() {
-                                        let _ = sender.send_blocking(uris[0].to_string());
-                                    }
+                            if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    let _ = sender.send_blocking(uris[0].to_string());
                                 }
-                                else {
-                                    println!("{maybe_files:?}");
+                            }
+                            else {
+                                println!("{maybe_files:?}");
+                            }
+                        });
+                        glib::MainContext::default().spawn_local(clone!(
+                            #[weak]
+                            obj,
+                            #[upgrade_or]
+                            (),
+                            async move {
+                                use futures::prelude::*;
+                                // Allow receiver to be mutated, but keep it at the same memory address.
+                                // See Receiver::next doc for why this is needed.
+                                let mut receiver = std::pin::pin!(receiver);
+
+                                if let Some(tag) = receiver.next().await {
+                                    obj.set_avatar(&tag);
                                 }
-                            });
-                        }
+                            }
+                        ));
                     }
                 ))
                 .build();
@@ -233,7 +246,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             library.clear_artist_avatar(artist.get_name());
                         }
@@ -250,7 +263,7 @@ mod imp {
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             let spinner = obj.imp().infobox_spinner.get();
                             if spinner.visible_child_name().unwrap() != "spinner" {
@@ -429,7 +442,7 @@ impl ArtistContentView {
             (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, true, true);
                     } else {
@@ -460,7 +473,7 @@ impl ArtistContentView {
             (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, false, false);
                     } else {
@@ -496,7 +509,7 @@ impl ArtistContentView {
         );
 
         // Set up factory
-        let library = self.imp().library.get().unwrap();
+        let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         let factory = SignalListItemFactory::new();
 
@@ -573,7 +586,7 @@ impl ArtistContentView {
         self.imp().song_subview.set_factory(Some(&factory));
     }
 
-    fn setup_album_subview(&self, client_state: ClientState) {
+    fn setup_album_subview(&self, client_state: &ClientState) {
         let settings = settings_manager().child("ui");
         // Unlike songs, we receive albums one by one.
         client_state.connect_closure(
@@ -647,29 +660,9 @@ impl ArtistContentView {
             .build();
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState) {
         self.imp().cache.set(cache).expect("Could not register artist content view with cache controller");
-        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
-        // Set up channel for listening to album art dialog
-        // It is in these situations that Rust's lack of a standard async library bites hard.
-        let (sender, receiver) = async_channel::unbounded::<String>();
-        let _ = self.imp().filepath_sender.set(sender);
-        glib::MainContext::default().spawn_local(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[upgrade_or]
-            (),
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                while let Some(tag) = receiver.next().await {
-                    this.set_avatar(&tag);
-                }
-            }
-        ));
+        self.imp().library.set(Some(library));
 
         self.setup_info_box();
         self.setup_song_subview(client_state.clone());
@@ -677,14 +670,14 @@ impl ArtistContentView {
 
         self.imp()
             .add_to_playlist
-            .setup(library, self.imp().song_sel_model.clone());
+            .setup(library, &self.imp().song_sel_model);
     }
 
     /// Set a user-selected path as the new local avatar.
     pub fn set_avatar(&self, path: &str) {
         if let (Some(artist), Some(library)) = (
             self.imp().artist.borrow().as_ref(),
-            self.imp().library.get()
+            self.imp().library.upgrade()
         ) {
             library.set_artist_avatar(artist.get_name(), path); 
         }

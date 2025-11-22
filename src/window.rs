@@ -36,7 +36,7 @@ use crate::{
     utils::{self, LazyInit, settings_manager},
 };
 use adw::{prelude::*, subclass::prelude::*, ColorScheme, StyleManager};
-use glib::signal::SignalHandlerId;
+use glib::{signal::SignalHandlerId, WeakRef};
 use gtk::{
     gdk, gio,
     glib::{self, clone, closure_local, BoxedAnyObject},
@@ -179,7 +179,7 @@ mod imp {
         #[property(get, set)]
         pub bg_opacity: Cell<f64>,
         pub bg_paintable: FadePaintable,
-        pub player: OnceCell<Player>,
+        pub player: WeakRef<Player>,
         pub sender_to_bg: OnceCell<Sender<WindowMessage>>, // sending a None will terminate the thread
         pub bg_handle: OnceCell<gio::JoinHandle<()>>,
         pub prev_size: Cell<(u32, u32)>,
@@ -866,12 +866,12 @@ impl EuphonicaWindow {
         win.imp().album_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             &win
         );
         win.imp().artist_view.setup(
             app.get_library(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             app.get_cache(),
         );
         win.imp().folder_view.setup(
@@ -887,7 +887,7 @@ impl EuphonicaWindow {
         win.imp().playlist_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             &win,
         );
         win.imp().sidebar.setup(&win, &app);
@@ -947,7 +947,7 @@ impl EuphonicaWindow {
                 }
             )
         );
-        let _ = win.imp().player.set(player);
+        let _ = win.imp().player.set(Some(player));
 
         win.imp().stack.connect_visible_child_name_notify(
             clone!(
@@ -1125,12 +1125,6 @@ impl EuphonicaWindow {
                 let imp = self.imp();
                 imp.title.set_subtitle("Connecting");
                 imp.should_populate_visible.set(false);
-                // Player clears itself
-                imp.recent_view.clear();
-                imp.album_view.clear();
-                imp.artist_view.clear();
-                imp.folder_view.clear();
-                imp.queue_view.clear();
             }
             ConnectionState::Connected => {
                 let imp = self.imp();
@@ -1228,7 +1222,7 @@ impl EuphonicaWindow {
     /// Set blurred background to a new image, if enabled. Use thumbnail version to
     /// minimise disk read time.
     fn queue_new_background(&self) {
-        if let Some(player) = self.imp().player.get() {
+        if let Some(player) = self.imp().player.upgrade() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
                 if let Some(path) = player
                     .current_song_cover_path(true).and_then(|path| if path.exists() {Some(path)} else {None})

@@ -228,6 +228,8 @@ impl Library {
         self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().playlists_initialized.set(false);
+        self.imp().dyn_playlists.remove_all();
+        self.imp().dyn_playlists_initialized.set(false);
         self.imp().folder_inodes.remove_all();
         let _ = self.imp().folder_history.replace(Vec::new());
         let _ = self.imp().folder_curr_idx.replace(0);
