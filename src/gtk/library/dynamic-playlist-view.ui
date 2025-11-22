@@ -55,8 +55,9 @@
                       </object>
                     </child>
                     <child type="start">
-                      <object class="GtkButton" id="create_btn">
+                      <object class="AdwSplitButton" id="create_btn">
                         <property name="icon-name">list-add-symbolic</property>
+                        <property name="menu-model">create_menu_model</property>
                         <style>
                           <class name="suggested-action"/>
                         </style>
@@ -109,5 +110,11 @@
         </child>
       </object>
     </child>
+    <menu id="create_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Import from JSON</attribute>
+        <attribute name="action">dp-view.import-json</attribute>
+      </item>
+    </menu>
   </template>
 </interface>

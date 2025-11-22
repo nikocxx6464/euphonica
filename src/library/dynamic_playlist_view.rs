@@ -23,6 +23,11 @@ use crate::{
 
 // DynamicPlaylist view implementation
 mod imp {
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    use gio::{ActionEntry, SimpleActionGroup};
+
+    use crate::utils;
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -49,7 +54,7 @@ mod imp {
         pub search_entry: TemplateChild<gtk::SearchEntry>,
 
         #[template_child]
-        pub create_btn: TemplateChild<gtk::Button>,
+        pub create_btn: TemplateChild<adw::SplitButton>,
 
         // Content
         #[template_child]
@@ -121,6 +126,118 @@ mod imp {
                     this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
                 }
             ));
+
+            let action_import_json = ActionEntry::builder("import-json")
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        let (sender, receiver) = async_channel::unbounded();
+                        utils::tokio_runtime().spawn(async move {
+                            let maybe_files = SelectedFiles::open_file()
+                                .title("Import Dynamic Playlist")
+                                .modal(true)
+                                .multiple(true)
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response();
+
+                            match maybe_files {
+                                Ok(files) => {
+                                    let uris = files.uris();
+                                    if !uris.is_empty() {
+                                        let _ = sender.send_blocking(uris.to_owned());
+                                    } else {
+                                        let _ = sender.send_blocking(vec![]);
+                                    }
+                                }
+                                Err(err) => {
+                                    dbg!(err);
+                                }
+                            }
+                        });
+                        glib::spawn_future_local(
+                            async move {
+                                use futures::prelude::*;
+                                let mut receiver = std::pin::pin!(receiver);
+                                if let Some(paths) = receiver.next().await {
+                                    'outer: for path in paths.iter() {
+                                        let str_path = path.to_string();
+                                        // Assume ashpd always return filesystem spec
+                                        let filepath = urlencoding::decode(if str_path.starts_with("file://") {
+                                            &str_path[7..]
+                                        } else {
+                                            &str_path
+                                        }).expect("Path must be in UTF-8").into_owned();
+                                        match utils::import_from_json::<DynamicPlaylist>(&filepath) {
+                                            Ok(dp) => {
+                                                // TODO: add a "keep both" option that renames the incoming
+                                                // playlist in a way that skips all existing ones.
+                                                let obj = this.obj();
+                                                let res = match sqlite::exists_dynamic_playlist(&dp.name) {
+                                                    Ok(exists) => {
+                                                        if exists {
+                                                            // TODO: translatable
+                                                            let diag = adw::AlertDialog::builder()
+                                                                .heading("Playlist Exists")
+                                                                .body(format!("A dynamic playlist named \"{}\" already exists. Would you like to overwrite it?", &dp.name))
+                                                                .build();
+                                                            diag.add_response("abort", "_Abort");
+                                                            diag.add_response("skip", "_Skip");
+                                                            diag.add_response("overwrite", "_Overwrite");
+                                                            diag.set_response_appearance("overwrite", adw::ResponseAppearance::Destructive);
+                                                            match diag.choose_future(obj.as_ref()).await.to_string().as_str() {
+                                                                "overwrite" => {
+                                                                    sqlite::insert_dynamic_playlist(&dp, Some(&dp.name))
+                                                                }
+                                                                "abort" => {
+                                                                    break 'outer;
+                                                                }
+                                                                _ => Ok(())
+                                                            }
+                                                        } else {
+                                                            sqlite::insert_dynamic_playlist(&dp, None)
+                                                        }
+                                                    },
+                                                    Err(e) => Err(e)
+                                                };
+                                                match res {
+                                                    Ok(_) => {},
+                                                    Err(e) => {
+                                                        dbg!(e);
+                                                        if let Some(window) = this.window.upgrade() {
+                                                            window.send_simple_toast(&format!("Couldn't import {}", &filepath), 5);
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            Err(e) => {
+                                                dbg!(e);
+                                                if let Some(window) = this.window.upgrade() {
+                                                    window.send_simple_toast(&format!("Couldn't import {}", &filepath), 5);
+                                                }
+                                            }
+                                        }
+                                    }
+                                    if let Some(library) = this.library.upgrade() {
+                                        library.init_dyn_playlists(true);
+                                    }
+                                }
+                            }
+                        );
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_import_json
+            ]);
+            self.obj().insert_action_group("dp-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {

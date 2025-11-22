@@ -7,12 +7,13 @@ use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
 use serde::Serialize;
+use serde::de::DeserializeOwned;
 use time::OffsetDateTime;
 use time::UtcOffset;
 use time::format_description::{parse_owned, OwnedFormatItem};
 use time::error::IndeterminateOffset;
 use std::fs::File;
-use std::io::BufWriter;
+use std::io::{BufWriter, BufReader};
 use std::sync::OnceLock;
 use std::fmt::Write;
 use std::time::SystemTime;
@@ -348,4 +349,22 @@ pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box
     serde_json::to_writer_pretty(writer, data)?;
 
     Ok(())
+}
+
+
+/// Imports a type that implements Deserialize from a JSON file.
+///
+/// # Arguments
+/// * `file_path` - The path to the JSON file.
+///
+/// # Returns
+/// A Result containing the deserialized struct or an error.
+/// We use `DeserializeOwned` here because we are creating the data from the file,
+/// so it must own its memory (not borrow from the input string).
+pub fn import_from_json<T: DeserializeOwned>(file_path: &str) -> Result<T, Box<dyn std::error::Error>> {
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    let deserialized_data = serde_json::from_reader(reader)?;
+
+    Ok(deserialized_data)
 }

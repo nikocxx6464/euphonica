@@ -3,7 +3,7 @@ use adw::subclass::prelude::*;
 use glib::{clone, Properties};
 use gtk::{glib, prelude::*, CompositeTemplate};
 
-use crate::{application::EuphonicaApplication, common::INode, utils, window::EuphonicaWindow};
+use crate::{application::EuphonicaApplication, client::state::StickersSupportLevel, common::INode, utils, window::EuphonicaWindow};
 
 use super::SidebarButton;
 
@@ -25,13 +25,15 @@ mod imp {
         #[template_child]
         pub playlists_section: TemplateChild<gtk::Box>,
         #[template_child]
-        pub dyn_playlists_btn: TemplateChild<SidebarButton>,
-        #[template_child]
-        pub recent_dyn_playlists: TemplateChild<gtk::ListBox>,
-        #[template_child]
         pub playlists_btn: TemplateChild<SidebarButton>,
         #[template_child]
         pub recent_playlists: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub dyn_playlists_section: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub dyn_playlists_btn: TemplateChild<SidebarButton>,
+        #[template_child]
+        pub recent_dyn_playlists: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub queue_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -236,6 +238,7 @@ impl Sidebar {
             ),
         );
 
+        let dyn_playlist_view = win.get_dyn_playlist_view();
         let dyn_playlists = library.dyn_playlists();
         let recent_dyn_playlists_model = gtk::SliceListModel::new(
             Some(gtk::SortListModel::new(
@@ -264,7 +267,7 @@ impl Sidebar {
                 #[weak]
                 stack,
                 #[weak]
-                playlist_view,
+                dyn_playlist_view,
                 #[weak]
                 split_view,
                 #[weak]
@@ -275,25 +278,25 @@ impl Sidebar {
                     let playlist = obj.downcast_ref::<INode>().unwrap();
                     let btn = SidebarButton::new(playlist.get_uri(), "dot-symbolic");
                     btn.set_group(Some(&recent_btn));
-                    // btn.connect_toggled(clone!(
-                    //     #[weak]
-                    //     stack,
-                    //     #[weak]
-                    //     playlist_view,
-                    //     #[weak]
-                    //     split_view,
-                    //     #[weak]
-                    //     playlist,
-                    //     move |btn| {
-                    //         if btn.is_active() {
-                    //             playlist_view.on_playlist_clicked(&playlist);
-                    //             if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
-                    //                 stack.set_visible_child_name("playlists");
-                    //             }
-                    //             split_view.set_show_sidebar(!split_view.is_collapsed());
-                    //         }
-                    //     }
-                    // ));
+                    btn.connect_toggled(clone!(
+                        #[weak]
+                        stack,
+                        #[weak]
+                        dyn_playlist_view,
+                        #[weak]
+                        split_view,
+                        #[weak]
+                        playlist,
+                        move |btn| {
+                            if btn.is_active() {
+                                dyn_playlist_view.on_playlist_clicked(&playlist);
+                                if stack.visible_child_name().is_none_or(|name| name.as_str() != "dynamic_playlists") {
+                                    stack.set_visible_child_name("dynamic_playlists");
+                                }
+                                split_view.set_show_sidebar(!split_view.is_collapsed());
+                            }
+                        }
+                    ));
                     btn.into()
                 }
             ),
@@ -345,6 +348,17 @@ impl Sidebar {
                 &self.imp().playlists_section.get(),
                 "visible",
             )
+            .sync_create()
+            .build();
+
+        // Dynamic playlists may rely on stickers.
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &self.imp().dyn_playlists_section.get(),
+                "visible",
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| Some(lvl == StickersSupportLevel::All))
             .sync_create()
             .build();
 

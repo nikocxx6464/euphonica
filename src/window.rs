@@ -1019,6 +1019,10 @@ impl EuphonicaWindow {
         self.imp().playlist_view.get()
     }
 
+    pub fn get_dyn_playlist_view(&self) -> DynamicPlaylistView {
+        self.imp().dyn_playlist_view.get()
+    }
+
     pub fn get_queue_view(&self) -> QueueView {
         self.imp().queue_view.get()
     }
