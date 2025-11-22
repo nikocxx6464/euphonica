@@ -178,7 +178,7 @@ impl DynamicPlaylistView {
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(self, &library, &client_state, cache.clone());
+        content_view.setup(self, &library, &client_state, cache.clone(), &window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });

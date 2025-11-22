@@ -5,6 +5,7 @@ use glib::{clone, closure_local, signal::SignalHandlerId};
 use gio::{ActionEntry, SimpleActionGroup};
 use gtk::{gio, glib, CompositeTemplate, ListItem, SignalListItemFactory};
 use glib::WeakRef;
+use time::OffsetDateTime;
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
@@ -14,8 +15,8 @@ use super::{DynamicPlaylistView, Library, artist_tag::ArtistTag};
 use crate::{
     cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::ClientState,
-    common::{ContentView, DynamicPlaylist, Song, SongRow},
-    utils::{self, format_secs_as_duration},
+    common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh},
+    utils::{self, format_secs_as_duration}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -64,6 +65,7 @@ mod imp {
         pub dp: RefCell<Option<DynamicPlaylist>>,
         pub library: WeakRef<Library>,
         pub outer: WeakRef<DynamicPlaylistView>,
+        pub window: WeakRef<EuphonicaWindow>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
     }
@@ -266,9 +268,10 @@ impl DynamicPlaylistContentView {
         self.imp().library.upgrade()
     }
 
-    pub fn setup(&self, outer: &DynamicPlaylistView, library: &Library, client_state: &ClientState, cache: Rc<Cache>) {
+    pub fn setup(&self, outer: &DynamicPlaylistView, library: &Library, client_state: &ClientState, cache: Rc<Cache>, window: &EuphonicaWindow) {
         self.imp().library.set(Some(library));
         self.imp().outer.set(Some(outer));
+        self.imp().window.set(Some(window));
 
         client_state.connect_closure(
             "dynamic-playlist-songs-downloaded",
@@ -437,13 +440,26 @@ impl DynamicPlaylistContentView {
                     Ok(Some(dp)) => {
                         let library = this.get_library().unwrap();
                         this.imp().title.set_label(&dp.name);
-                        // If we've got a cached version, use it. Else
-                        // resolve rules from scratch.
-                        // TODO: Implement autorefresh.
-                        if dp.last_refresh.is_some() {
-                            library.fetch_cached_dynamic_playlist(&dp.name);
-                        }
-                        else {
+                        // If we've got a cached version & it's not time for autorefresh
+                        // yet, use it. Else resolve rules from scratch.
+                        if let Some(last_refresh) = dp.last_refresh {
+                            // Check whether we need to perform an auto-refresh
+                            if OffsetDateTime::now_utc().unix_timestamp() - last_refresh < match dp.auto_refresh {
+                                AutoRefresh::None => i64::MAX,
+                                AutoRefresh::Hourly => 3600,
+                                AutoRefresh::Daily => 86400,
+                                AutoRefresh::Weekly => 86400 * 7,
+                                AutoRefresh::Monthly => 86400 * 30,
+                                AutoRefresh::Yearly => 86400 * 365
+                            } {
+                                if let Some(window) = this.imp().window.upgrade() {
+                                    window.send_simple_toast("Auto-refreshing...", 3);
+                                }
+                                library.fetch_dynamic_playlist(dp.clone(), true);
+                            } else {
+                                library.fetch_cached_dynamic_playlist(&dp.name);
+                            }
+                        } else {
                             library.fetch_dynamic_playlist(dp.clone(), true);
                         }
                         this.imp().dp.replace(Some(dp));
