@@ -21,15 +21,9 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientError, ClientState, ConnectionState},
-    common::{blend_mode::*, paintables::FadePaintable, Album, Artist, ThemeSelector},
+    common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
     library::{
-        AlbumView,
-        ArtistContentView,
-        ArtistView,
-        FolderView,
-        PlaylistView,
-        DynamicPlaylistView,
-        RecentView
+        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView, RecentView
     },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
@@ -56,6 +50,16 @@ use async_channel::Sender;
 use glib::Properties;
 use image::ImageReader as Reader;
 
+// Blurred background logic. Runs in a background thread. Both interpretations are valid :)
+// Our asynchronous background switching algorithm is pretty simple: Player controller
+// sends paths of album arts (just strings) to this thread. It then loads the image from
+// disk as a DynamicImage (CPU-side, not GdkTextures, which are quickly dumped into VRAM),
+// blurs it using libblur, uploads to GPU and fades background to it.
+// In case more paths arrive as we are in the middle of processing one for fading, the loop
+// will come back to the async channel with many messages in it. In this case, pop and drop
+// all except the last, which we will process normally. This means quickly skipping songs
+// will not result in a rapidly-changing background - it will only change as quickly as it
+// can fade or the CPU can blur, whichever is slower.
 #[derive(Debug)]
 pub struct BlurConfig {
     width: u32,
@@ -108,16 +112,6 @@ pub enum WindowMessage {
     Stop,
 }
 
-// Blurred background logic. Runs in a background thread. Both interpretations are valid :)
-// Our asynchronous background switching algorithm is pretty simple: Player controller
-// sends paths of album arts (just strings) to this thread. It then loads the image from
-// disk as a DynamicImage (CPU-side, not GdkTextures, which are quickly dumped into VRAM),
-// blurs it using libblur, uploads to GPU and fades background to it.
-// In case more paths arrive as we are in the middle of processing one for fading, the loop
-// will come back to the async channel with many messages in it. In this case, pop and drop
-// all except the last, which we will process normally. This means quickly skipping songs
-// will not result in a rapidly-changing background - it will only change as quickly as it
-// can fade or the CPU can blur, whichever is slower.
 mod imp {
     use super::*;
 
@@ -1197,14 +1191,12 @@ impl EuphonicaWindow {
 
     fn goto_pane(&self) {
         self.imp().sidebar.set_view("queue");
-        // self.imp().stack.set_visible_child_name("queue");
         self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         self.imp().queue_view.set_show_content(true);
     }
 
     pub fn goto_album(&self, album: &Album) {
         self.imp().album_view.on_album_clicked(album);
-        // self.imp().stack.set_visible_child_name("albums");
         self.imp().sidebar.set_view("albums");
         if self.imp().split_view.shows_sidebar() {
             self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
@@ -1213,8 +1205,15 @@ impl EuphonicaWindow {
 
     pub fn goto_artist(&self, artist: &Artist) {
         self.imp().artist_view.on_artist_clicked(artist);
-        // self.imp().stack.set_visible_child_name("artists");
         self.imp().sidebar.set_view("artists");
+        if self.imp().split_view.shows_sidebar() {
+            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+        }
+    }
+
+    pub fn goto_playlist(&self, playlist: &INode) {
+        self.imp().playlist_view.on_playlist_clicked(playlist);
+        self.imp().sidebar.set_view("playlists");
         if self.imp().split_view.shows_sidebar() {
             self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         }

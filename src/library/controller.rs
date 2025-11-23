@@ -5,6 +5,7 @@ use glib::{closure_local, subclass::Signal, clone};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
 use derivative::Derivative;
+use chrono::Local;
 
 use adw::subclass::prelude::*;
 
@@ -477,8 +478,8 @@ impl Library {
     }
 
     /// Get all playlists
-    pub fn init_playlists(&self) {
-        if !self.imp().playlists_initialized.get() {
+    pub fn init_playlists(&self, refresh: bool) {
+        if refresh || !self.imp().playlists_initialized.get() {
             self.imp().playlists.remove_all();
             self.imp()
                 .playlists
@@ -588,7 +589,9 @@ impl Library {
     }
 
     pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
-        self.client().delete_playlist(name)
+        self.client().delete_playlist(name)?;
+        self.init_playlists(true);
+        Ok(())
     }
 
     pub fn add_songs_to_playlist(
@@ -639,7 +642,7 @@ impl Library {
     pub fn delete_dynamic_playlist(&self, name: &str) {
         glib::spawn_future_local(clone!(
             #[weak(rename_to = this)]
-            self,
+           self,
             async move {
                 match gio::spawn_blocking(|| {
                     sqlite::get_dynamic_playlists()
@@ -662,6 +665,24 @@ impl Library {
                 }
             }
         ));
+    }
+
+    pub fn save_dynamic_playlist_state(&self, dp_name: &str) -> Option<String> {
+        if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(dp_name) {
+            if !uris.is_empty() {
+                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+                self.client().edit_playlist(
+                    &uris.iter().map(
+                        |uri| EditAction::Add(Cow::Borrowed(&fixed_name), Cow::Borrowed(uri), None)
+                    ).collect::<Vec::<EditAction>>()
+                );
+                Some(fixed_name)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub fn get_folder_contents(&self) {

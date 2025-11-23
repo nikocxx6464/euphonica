@@ -186,6 +186,21 @@ impl Sidebar {
             .bind("recent-playlists-count", &recent_playlists_model, "size")
             .build();
 
+        self.imp().playlists_btn.connect_toggled(clone!(
+            #[weak]
+            stack,
+            #[weak]
+            playlist_view,
+            move |btn| {
+                if btn.is_active() {
+                    playlist_view.pop();
+                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                        stack.set_visible_child_name("playlists");
+                    }
+                }
+            }
+        ));
+
         let recent_playlists_widget = self.imp().recent_playlists.get();
         recent_playlists_widget.bind_model(
             Some(&recent_playlists_model),
@@ -330,21 +345,6 @@ impl Sidebar {
             .sync_create()
             .build();
 
-        self.imp().playlists_btn.connect_toggled(clone!(
-            #[weak]
-            stack,
-            #[weak]
-            playlist_view,
-            move |btn| {
-                if btn.is_active() {
-                    playlist_view.pop();
-                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
-                        stack.set_visible_child_name("playlists");
-                    }
-                }
-            }
-        ));
-
         client_state
             .bind_property(
                 "supports-playlists",
@@ -385,10 +385,12 @@ impl Sidebar {
                 move |_| split_view.set_show_sidebar(!split_view.is_collapsed())
             ));
         for btn in [
+            &self.imp().recent_btn.get(),
             &self.imp().albums_btn.get(),
             &self.imp().artists_btn.get(),
             &self.imp().folders_btn.get(),
             &self.imp().playlists_btn.get(),
+            &self.imp().dyn_playlists_btn.get(),
         ] {
             btn.upcast_ref::<gtk::ToggleButton>()
                 .upcast_ref::<gtk::Button>()
@@ -412,6 +414,7 @@ impl Sidebar {
             "albums" => self.imp().albums_btn.set_active(true),
             "artists" => self.imp().artists_btn.set_active(true),
             "queue" => self.imp().queue_btn.set_active(true),
+            "playlists" => self.imp().playlists_btn.set_active(true),
             _ => unimplemented!(),
         };
     }

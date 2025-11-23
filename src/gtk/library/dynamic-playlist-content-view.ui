@@ -252,12 +252,18 @@
       </object>
     </child>
     <menu id="ellipsis_menu_model">
+      <section>
+        <item>
+          <attribute name="label" translatable="true">Export as JSON</attribute>
+          <attribute name="action">dp-content-view.export-json</attribute>
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Save As MPD Playlist</attribute>
+          <attribute name="action">dp-content-view.save-mpd</attribute>
+        </item>
+      </section>
       <item>
-        <attribute name="label" translatable="true">Export as JSON</attribute>
-        <attribute name="action">dp-content-view.export-json</attribute>
-      </item>
-      <item>
-        <attribute name="label" translatable="true">Delete playlist</attribute>
+        <attribute name="label" translatable="true">Delete Playlist</attribute>
         <attribute name="action">dp-content-view.delete</attribute>
       </item>
     </menu>

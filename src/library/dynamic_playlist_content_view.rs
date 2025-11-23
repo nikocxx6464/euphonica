@@ -20,6 +20,8 @@ use crate::{
 };
 
 mod imp {
+    use crate::common::{INodeType, inode::INodeInfo};
+
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Derivative)]
@@ -236,10 +238,37 @@ mod imp {
                 ))
                 .build();
 
+            let action_save_mpd = ActionEntry::builder("save-mpd")
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        if let (Some(dp), Some(library)) = (
+                            this.dp.borrow().as_ref(),
+                            this.library.upgrade()
+                        ) {
+                            if let (Some(fixed_name), Some(window)) = (
+                                library.save_dynamic_playlist_state(&dp.name),
+                                this.window.upgrade()
+                            ) {
+                                window.goto_playlist(
+                                    &INodeInfo::new(
+                                        &fixed_name, None, INodeType::Playlist
+                                    ).into()
+                                );
+                            }
+                        }
+                    }
+                ))
+                .build();
+
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
                 action_delete,
+                action_save_mpd,
                 action_export_json,
             ]);
             self.obj().insert_action_group("dp-content-view", Some(&actions));

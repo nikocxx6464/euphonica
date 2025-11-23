@@ -984,7 +984,8 @@ impl MpdWrapper {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.pl_remove(name) {
                 Ok(()) => {
-                    self.force_idle();
+                    // Don't force idle, as deleting a playlist won't trigger
+                    // an idle message.
                     Ok(())
                 },
                 Err(e) => {

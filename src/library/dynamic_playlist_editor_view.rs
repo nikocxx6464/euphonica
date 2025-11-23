@@ -988,6 +988,7 @@ impl DynamicPlaylistEditorView {
             imp.limit.set_value(limit as f64);
         }
 
+        self.preview_result();
         self.imp().unsaved.set(false);
     }
 

@@ -178,7 +178,7 @@ impl PlaylistView {
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.upgrade().unwrap().init_playlists();
+                        this.imp().library.upgrade().unwrap().init_playlists(false);
                     }
                 }
             ),
@@ -194,7 +194,7 @@ impl PlaylistView {
                     if subsys.borrow::<Subsystem>().deref() == &Subsystem::Playlist {
                         let library = this.imp().library.upgrade().unwrap();
                         // Reload playlists
-                        library.init_playlists();
+                        library.init_playlists(true);
                         // Also try to reload content view too, if it's still bound to one.
                         // If its currently-bound playlist has just been deleted, don't rebind it.
                         // Instead, force-switch the nav view to this page.
