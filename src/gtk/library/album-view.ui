@@ -25,34 +25,9 @@
                       </object>
                     </child>
                     <child type="end">
-                      <object class="GtkBox">
-                        <style>
-                          <class name="linked"/>
-                          <class name="flat"/>
-                        </style>
-                        <child>
-                          <object class="GtkButton" id="sort_dir_btn">
-                            <child>
-                              <object class="GtkImage" id="sort_dir">
-                                <property name="icon-name">view-sort-ascending-symbolic</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkDropDown" id="sort_mode">
-                            <property name="model">
-                              <object class="GtkStringList">
-                                <items>
-                                  <item translatable="yes">Album title</item>
-                                  <item translatable="yes">AlbumArtist</item>
-                                  <item translatable="yes">Release date</item>
-                                  <item translatable="yes">Rating</item>
-                                </items>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
+                      <object class="GtkMenuButton" id="view_options_btn">
+                        <property name="menu-model">view_options_model</property>
+                        <property name="icon-name">view-sort-ascending-symbolic</property>
                       </object>
                     </child>
                   </object>
@@ -152,5 +127,38 @@
         </child>
       </object>
     </child>
+    <menu id="view_options_model">
+      <section>
+        <attribute name="label" translatable="yes">Sort By</attribute>
+        <item>
+          <attribute name="label" translatable="true">Album Title</attribute>
+          <attribute name="action">album-view.sort-by</attribute>
+          <attribute name="target">3</attribute> <!-- See sortby enum -->
+        </item>
+        <item>
+          <attribute name="label">AlbumArtist</attribute>  <!-- Don't translate this as this is referring to the tag itself -->
+          <attribute name="action">album-view.sort-by</attribute>
+          <attribute name="target">5</attribute> <!-- See sortby enum -->
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Release Date</attribute>
+          <attribute name="action">album-view.sort-by</attribute>
+          <attribute name="target">8</attribute> <!-- See sortby enum -->
+        </item>
+      </section>
+      <section>
+        <attribute name="label" translatable="yes">Sort Direction</attribute>
+        <item>
+          <attribute name="label" translatable="true">Ascending</attribute>
+          <attribute name="action">album-view.sort-direction</attribute>
+          <attribute name="target">1</attribute> <!-- See sortdir enum -->
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Descending</attribute>
+          <attribute name="action">album-view.sort-direction</attribute>
+          <attribute name="target">0</attribute> <!-- See sortdir enum -->
+        </item>
+      </section>
+    </menu>
   </template>
 </interface>
