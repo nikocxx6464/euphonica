@@ -26,33 +26,37 @@
                       </object>
                     </child>
                     <child type="end">
-                      <object class="GtkBox">
-                        <style>
-                          <class name="linked"/>
-                          <class name="flat"/>
-                        </style>
-                        <child>
-                          <object class="GtkButton" id="sort_dir_btn">
-                            <child>
-                              <object class="GtkImage" id="sort_dir">
-                                <property name="icon-name">view-sort-ascending-symbolic</property>
-                              </object>
-                            </child>
-                          </object>
-                        </child>
-                        <child>
-                          <object class="GtkDropDown" id="sort_mode">
-                            <property name="model">
-                              <object class="GtkStringList">
-                                <items>
-                                  <item translatable="yes">Playlist name</item>
-                                  <item translatable="yes">Last modified</item>
-                                </items>
-                              </object>
-                            </property>
-                          </object>
-                        </child>
+                      <object class="GtkMenuButton" id="view_options_btn">
+                        <property name="menu-model">view_options_model</property>
+                        <property name="icon-name">view-sort-ascending-symbolic</property>
                       </object>
+                      <!-- <object class="GtkBox"> -->
+                      <!--   <style> -->
+                      <!--     <class name="linked"/> -->
+                      <!--     <class name="flat"/> -->
+                      <!--   </style> -->
+                      <!--   <child> -->
+                      <!--     <object class="GtkButton" id="sort_dir_btn"> -->
+                      <!--       <child> -->
+                      <!--         <object class="GtkImage" id="sort_dir"> -->
+                      <!--           <property name="icon-name">view-sort-ascending-symbolic</property> -->
+                      <!--         </object> -->
+                      <!--       </child> -->
+                      <!--     </object> -->
+                      <!--   </child> -->
+                      <!--   <child> -->
+                      <!--     <object class="GtkDropDown" id="sort_mode"> -->
+                      <!--       <property name="model"> -->
+                      <!--         <object class="GtkStringList"> -->
+                      <!--           <items> -->
+                      <!--             <item translatable="yes">Playlist name</item> -->
+                      <!--             <item translatable="yes">Last modified</item> -->
+                      <!--           </items> -->
+                      <!--         </object> -->
+                      <!--       </property> -->
+                      <!--     </object> -->
+                      <!--   </child> -->
+                      <!-- </object> -->
                     </child>
                     <child type="start">
                       <object class="AdwSplitButton" id="create_btn">
@@ -115,6 +119,34 @@
         <attribute name="label" translatable="true">Import from JSON</attribute>
         <attribute name="action">dp-view.import-json</attribute>
       </item>
+    </menu>
+    <menu id="view_options_model">
+      <section>
+        <attribute name="label" translatable="yes">Sort By</attribute>
+        <item>
+          <attribute name="label">Playlist Name</attribute>
+          <attribute name="action">dp-view.sort-by</attribute>
+          <attribute name="target">6</attribute> <!-- See sortby enum -->
+        </item>
+        <item>
+          <attribute name="label">Last Modified</attribute>
+          <attribute name="action">dp-view.sort-by</attribute>
+          <attribute name="target">7</attribute> <!-- See sortby enum -->
+        </item>
+      </section>
+      <section>
+        <attribute name="label" translatable="yes">Sort Direction</attribute>
+        <item>
+          <attribute name="label">Ascending</attribute>
+          <attribute name="action">dp-view.sort-direction</attribute>
+          <attribute name="target">1</attribute> <!-- See sortdir enum -->
+        </item>
+        <item>
+          <attribute name="label">Descending</attribute>
+          <attribute name="action">dp-view.sort-direction</attribute>
+          <attribute name="target">0</attribute> <!-- See sortdir enum -->
+        </item>
+      </section>
     </menu>
   </template>
 </interface>

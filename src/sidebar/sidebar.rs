@@ -164,16 +164,6 @@ impl Sidebar {
             }
         ));
 
-        self.imp().dyn_playlists_btn.connect_toggled(clone!(
-            #[weak]
-            stack,
-            move |btn| {
-                if btn.is_active() {
-                    stack.set_visible_child_name("dynamic_playlists");
-                }
-            }
-        ));
-
         let playlist_view = win.get_playlist_view();
         let playlists = library.playlists();
         let recent_playlists_model = gtk::SliceListModel::new(
@@ -259,6 +249,19 @@ impl Sidebar {
         settings
             .bind("recent-playlists-count", &recent_dyn_playlists_model, "size")
             .build();
+
+        self.imp().dyn_playlists_btn.connect_toggled(clone!(
+            #[weak]
+            stack,
+            #[weak]
+            dyn_playlist_view,
+            move |btn| {
+                if btn.is_active() {
+                    dyn_playlist_view.pop();
+                    stack.set_visible_child_name("dynamic_playlists");
+                }
+            }
+        ));
 
         let recent_dyn_playlists_widget = self.imp().recent_dyn_playlists.get();
         recent_dyn_playlists_widget.bind_model(

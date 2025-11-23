@@ -375,6 +375,7 @@ mod imp {
                 self.artist_view.upcast_ref::<gtk::Widget>(),
                 self.folder_view.upcast_ref::<gtk::Widget>(),
                 self.playlist_view.upcast_ref::<gtk::Widget>(),
+                self.dyn_playlist_view.upcast_ref::<gtk::Widget>(),
                 self.queue_view.upcast_ref::<gtk::Widget>()
             ].iter().for_each(clone!(
                 #[weak]

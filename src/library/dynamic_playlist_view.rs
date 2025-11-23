@@ -41,11 +41,7 @@ mod imp {
 
         // Search & filter widgets
         #[template_child]
-        pub sort_dir: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub sort_dir_btn: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub sort_mode: TemplateChild<gtk::DropDown>,
+        pub view_options_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub search_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -67,7 +63,7 @@ mod imp {
         // Editor view is created on demand.
 
         // Search & filter models
-        pub search_filter: gtk::CustomFilter,
+        pub search_filter: gtk::StringFilter,
         pub sorter: gtk::CustomSorter,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
@@ -127,12 +123,164 @@ mod imp {
                 }
             ));
 
+            // Setup sorting
+            let settings = settings_manager();
+            let state = settings.child("state").child("dynplaylistview");
+            let library_settings = settings.child("library");
+            self.sorter.set_sort_func(clone!(
+                #[strong]
+                library_settings,
+                #[strong]
+                state,
+                move |obj1, obj2| {
+                    let inode1 = obj1
+                        .downcast_ref::<INode>()
+                        .expect("Sort obj has to be a common::INode.");
+
+                    let inode2 = obj2
+                        .downcast_ref::<INode>()
+                        .expect("Sort obj has to be a common::INode.");
+
+                    // Should we sort ascending?
+                    let asc = state.enum_("sort-direction") > 0;
+                    // Should the sorting be case-sensitive, i.e. uppercase goes first?
+                    let case_sensitive = library_settings.boolean("sort-case-sensitive");
+                    // Should nulls be put first or last?
+                    let nulls_first = library_settings.boolean("sort-nulls-first");
+
+                    // Vary behaviour depending on sort menu
+                    match state.enum_("sort-by") {
+                        // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
+                        6 => {
+                            // Filename
+                            g_cmp_str_options(
+                                Some(inode1.get_uri()),
+                                Some(inode2.get_uri()),
+                                nulls_first,
+                                asc,
+                                case_sensitive,
+                            )
+                        }
+                        7 => {
+                            // Last modified
+                            g_cmp_str_options(
+                                inode1.get_last_modified(),
+                                inode2.get_last_modified(),
+                                nulls_first,
+                                asc,
+                                case_sensitive,
+                            )
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            ));
+
+            // Setup searching
+            library_settings
+                .bind("search-case-sensitive", &self.search_filter, "ignore-case")
+                .get_only()
+                .invert_boolean()
+                .build();
+            self.search_filter.set_expression(Some(
+                &gtk::PropertyExpression::new(
+                    INode::static_type(),
+                    Option::<gtk::PropertyExpression>::None,
+                    "uri"
+                )
+            ));
+            let search_entry = self.search_entry.get();
+            search_entry
+                .bind_property("text", &self.search_filter, "search")
+                .build();
+            search_entry.connect_search_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+                    let text = entry.text();
+                    let new_len = text.len();
+                    let old_len = this.last_search_len.replace(new_len);
+                    match new_len.cmp(&old_len) {
+                        Ordering::Greater => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::MoreStrict);
+                        }
+                        Ordering::Less => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::LessStrict);
+                        }
+                        Ordering::Equal => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::Different);
+                        }
+                    }
+                }
+            ));
+
+            let view_options_btn = self.view_options_btn.get();
+            state
+                .bind("sort-direction", &view_options_btn, "icon-name")
+                .get_only()
+                .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
+                    "asc" => Some("view-sort-ascending-symbolic".to_value()),
+                    _ => Some("view-sort-descending-symbolic".to_value()),
+                })
+                .build();
+
+            // Note to self: to work with menus, an action's state must be boolean or string.
+            let action_sort_by = ActionEntry::builder("sort-by")
+                .parameter_type(Some(&String::static_variant_type()))
+                .state(state.enum_("sort-by").to_string().into())
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    state,
+                    move |_, action, param| {
+                        let param = param
+                            .expect("Could not get parameter.")
+                            .get::<String>()
+                            .expect("The value needs to be of type `String`.");
+                        let idx = param.parse::<i32>().unwrap();
+
+
+                        if state.set_enum("sort-by", idx).is_ok() {
+                            this.sorter.changed(gtk::SorterChange::Different);
+                            action.set_state(&param.to_variant());
+                        }
+                    }))
+                .build();
+
+            let action_sort_direction = ActionEntry::builder("sort-direction")
+                .parameter_type(Some(&String::static_variant_type()))
+                .state(state.enum_("sort-direction").to_string().into())
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    state,
+                    move |_, action, param| {
+                        let param = param
+                            .expect("Could not get parameter.")
+                            .get::<String>()
+                            .expect("The value needs to be of type `String`.");
+                        let idx = param.parse::<i32>().unwrap();
+
+
+                        if state.set_enum("sort-direction", idx).is_ok() {
+                            this.sorter.changed(gtk::SorterChange::Inverted);
+                            action.set_state(&param.to_variant());
+                        }
+                    }))
+                .build();
+
             let action_import_json = ActionEntry::builder("import-json")
                 .activate(clone!(
                     #[weak(rename_to = this)]
                     self,
-                    #[upgrade_or]
-                    (),
                     move |_, _, _| {
                         let (sender, receiver) = async_channel::unbounded();
                         utils::tokio_runtime().spawn(async move {
@@ -235,6 +383,8 @@ mod imp {
             // Create a new action group and add actions to it
             let actions = SimpleActionGroup::new();
             actions.add_action_entries([
+                action_sort_by,
+                action_sort_direction,
                 action_import_json
             ]);
             self.obj().insert_action_group("dp-view", Some(&actions));
@@ -256,7 +406,7 @@ mod imp {
 glib::wrapper! {
     pub struct DynamicPlaylistView(ObjectSubclass<imp::DynamicPlaylistView>)
         @extends gtk::Widget,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+    @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gio::ActionGroup, gio::ActionMap;
 }
 
 impl Default for DynamicPlaylistView {
@@ -270,6 +420,10 @@ impl DynamicPlaylistView {
         let res: Self = glib::Object::new();
 
         res
+    }
+
+    pub fn pop(&self) {
+        self.imp().nav_view.pop();
     }
 
     pub fn delete(&self, name: &str) {
@@ -306,8 +460,6 @@ impl DynamicPlaylistView {
             .expect("Cannot init DynamicPlaylistView with cache controller");
         self.imp().client_state.set(Some(client_state));
         self.imp().window.set(Some(window));
-        self.setup_sort();
-        self.setup_search();
         self.setup_listview();
 
         client_state.connect_notify_local(
@@ -405,182 +557,6 @@ impl DynamicPlaylistView {
                 .child(&editor)
                 .build()
         );
-    }
-
-    fn setup_sort(&self) {
-        // Setup sort widget & actions
-        let settings = settings_manager();
-        let state = settings.child("state").child("dynplaylistview");
-        let library_settings = settings.child("library");
-        let sort_dir_btn = self.imp().sort_dir_btn.get();
-        sort_dir_btn.connect_clicked(clone!(
-            #[weak]
-            state,
-            move |_| {
-                if state.string("sort-direction") == "asc" {
-                    let _ = state.set_string("sort-direction", "desc");
-                } else {
-                    let _ = state.set_string("sort-direction", "asc");
-                }
-            }
-        ));
-        let sort_dir = self.imp().sort_dir.get();
-        state
-            .bind("sort-direction", &sort_dir, "icon-name")
-            .get_only()
-            .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
-                "asc" => Some("view-sort-ascending-symbolic".to_value()),
-                _ => Some("view-sort-descending-symbolic".to_value()),
-            })
-            .build();
-        let sort_mode = self.imp().sort_mode.get();
-        state
-            .bind("sort-by", &sort_mode, "selected")
-            .mapping(|val, _| {
-                // TODO: i18n
-                match val.get::<String>().unwrap().as_ref() {
-                    "filename" => Some(0.to_value()),
-                    "last-modified" => Some(1.to_value()),
-                    _ => unreachable!(),
-                }
-            })
-            .set_mapping(|val, _| match val.get::<u32>().unwrap() {
-                0 => Some("filename".to_variant()),
-                1 => Some("last-modified".to_variant()),
-                _ => unreachable!(),
-            })
-            .build();
-        self.imp().sorter.set_sort_func(clone!(
-            #[strong]
-            library_settings,
-            #[strong]
-            state,
-            move |obj1, obj2| {
-                let inode1 = obj1
-                    .downcast_ref::<INode>()
-                    .expect("Sort obj has to be a common::INode.");
-
-                let inode2 = obj2
-                    .downcast_ref::<INode>()
-                    .expect("Sort obj has to be a common::INode.");
-
-                // Should we sort ascending?
-                let asc = state.enum_("sort-direction") > 0;
-                // Should the sorting be case-sensitive, i.e. uppercase goes first?
-                let case_sensitive = library_settings.boolean("sort-case-sensitive");
-                // Should nulls be put first or last?
-                let nulls_first = library_settings.boolean("sort-nulls-first");
-
-                // Vary behaviour depending on sort menu
-                match state.enum_("sort-by") {
-                    // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
-                    6 => {
-                        // Filename
-                        g_cmp_str_options(
-                            Some(inode1.get_uri()),
-                            Some(inode2.get_uri()),
-                            nulls_first,
-                            asc,
-                            case_sensitive,
-                        )
-                    }
-                    7 => {
-                        // Last modified
-                        g_cmp_str_options(
-                            inode1.get_last_modified(),
-                            inode2.get_last_modified(),
-                            nulls_first,
-                            asc,
-                            case_sensitive,
-                        )
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        ));
-
-        // Update when changing sort settings
-        state.connect_changed(
-            Some("sort-by"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Updating sort...");
-                    this.imp().sorter.changed(gtk::SorterChange::Different);
-                }
-            ),
-        );
-        state.connect_changed(
-            Some("sort-direction"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Flipping sort...");
-                    // Don't actually sort, just flip the results :)
-                    this.imp().sorter.changed(gtk::SorterChange::Inverted);
-                }
-            ),
-        );
-    }
-
-    fn setup_search(&self) {
-        let settings = settings_manager();
-        let library_settings = settings.child("library");
-        // Set up search filter
-        self.imp().search_filter.set_filter_func(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[strong]
-            library_settings,
-            #[upgrade_or]
-            true,
-            move |obj| {
-                let inode = obj
-                    .downcast_ref::<INode>()
-                    .expect("Search obj has to be a common::INode.");
-
-                let search_term = this.imp().search_entry.text();
-                if search_term.is_empty() {
-                    return true;
-                }
-
-                // Should the searching be case-sensitive?
-                let case_sensitive = library_settings.boolean("search-case-sensitive");
-                g_search_substr(Some(inode.get_uri()), &search_term, case_sensitive)
-            }
-        ));
-
-        // Connect search entry to filter. Filter will later be put in GtkSearchModel.
-        // That GtkSearchModel will listen to the filter's changed signal.
-        let search_entry = self.imp().search_entry.get();
-        search_entry.connect_search_changed(clone!(
-            #[weak(rename_to = this)]
-            self,
-            move |entry| {
-                let text = entry.text();
-                let new_len = text.len();
-                let old_len = this.imp().last_search_len.replace(new_len);
-                match new_len.cmp(&old_len) {
-                    Ordering::Greater => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::MoreStrict);
-                    }
-                    Ordering::Less => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::LessStrict);
-                    }
-                    Ordering::Equal => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::Different);
-                    }
-                }
-            }
-        ));
     }
 
     pub fn on_playlist_clicked(&self, inode: &INode) {

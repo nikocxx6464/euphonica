@@ -91,13 +91,6 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkSeparator">
-                        <style>
-                          <class name="spacer"/>
-                        </style>
-                      </object>
-                    </child>
-                    <child>
                       <object class="GtkBox" id="metadata_box">
                         <property name="spacing">12</property>
                         <child>

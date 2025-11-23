@@ -21,13 +21,11 @@
             <condition>max-width: 550px</condition>
             <setter object="infobox" property="orientation">1</setter>
             <setter object="cover" property="pixel-size">128</setter>
-            <setter object="replace_queue_text" property="visible">false</setter>
-            <setter object="add_to_playlist" property="collapsed">true</setter>
+            <setter object="append_queue_text" property="visible">false</setter>
+            <setter object="edit_text" property="visible">false</setter>
 
             <setter object="title" property="halign">fill</setter>
             <setter object="title" property="justify">center</setter>
-            <setter object="artists_box" property="halign">center</setter>
-            <setter object="rating_box" property="halign">center</setter>
             <setter object="metadata_box" property="halign">center</setter>
           </object>
         </child>
@@ -71,13 +69,6 @@
                         <property name="label">Untitled Playlist</property>
                         <style>
                           <class name="title-2"/>
-                        </style>
-                      </object>
-                    </child>
-                    <child>
-                      <object class="GtkSeparator">
-                        <style>
-                          <class name="spacer"/>
                         </style>
                       </object>
                     </child>
@@ -193,7 +184,7 @@
                           </object>
                         </child>
                         <child>
-                          <object class="GtkLabel">
+                          <object class="GtkLabel" id="append_queue_text">
                             <property name="label" translatable="true">Queue</property>
                           </object>
                         </child>
