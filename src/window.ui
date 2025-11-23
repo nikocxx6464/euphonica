@@ -9,7 +9,7 @@
     <property name="width-request">360</property>
     <child>
       <object class="AdwBreakpoint">
-        <condition>max-height: 700</condition>
+        <condition>max-height: 680</condition>
         <setter object="player_bar" property="collapsed">true</setter>
       </object>
     </child>
