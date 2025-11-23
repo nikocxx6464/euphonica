@@ -415,6 +415,10 @@ impl RuleButton {
                             op.set_selected(0);
                         }
                     }
+                    Stickers::RATING_KEY => {
+                        op.set_selected(sop.numeric_model_index().unwrap());
+                        imp.rhs.set_text(&format!("{:.1}", text.parse::<f32>().unwrap() / 2.0));
+                    }
                     _ => {
                         op.set_selected(sop.numeric_model_index().unwrap());
                         imp.rhs.set_text(&text);
