@@ -285,12 +285,7 @@ impl Song {
 
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
-        if let Some(then) = self.get_last_played() {
-            Some(get_time_ago_desc(then.unix_timestamp()))
-        }
-        else {
-            None
-        }
+        self.get_last_played().map(|then| get_time_ago_desc(then.unix_timestamp()))
     }
 
     pub fn get_last_played(&self) -> Option<OffsetDateTime> {

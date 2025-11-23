@@ -356,7 +356,7 @@ impl EuphonicaApplication {
 
     pub fn show_preferences(&self) {
         let window = self.active_window().unwrap();
-        let prefs = Preferences::new(self.get_client(), self.get_cache(), &self.get_player());
+        let prefs = Preferences::new(self.get_client(), self.get_cache(), self.get_player());
         prefs.present(Some(&window));
         prefs.update();
     }

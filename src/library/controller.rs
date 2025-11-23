@@ -670,7 +670,7 @@ impl Library {
     pub fn save_dynamic_playlist_state(&self, dp_name: &str) -> Option<String> {
         if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(dp_name) {
             if !uris.is_empty() {
-                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S").to_string());
+                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
                 self.client().edit_playlist(
                     &uris.iter().map(
                         |uri| EditAction::Add(Cow::Borrowed(&fixed_name), Cow::Borrowed(uri), None)

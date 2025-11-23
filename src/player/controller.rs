@@ -1024,7 +1024,7 @@ impl Player {
                     .current_song
                     .borrow_mut();
 
-                // If there's a new song, check if we need to increment skipCount and set lastSkipped
+                // If there's a new song, check if we need to increment skipCount and set lastSkipped for the prev one.
                 if let Some(song) = local_curr_song.as_ref() {
                     if song.get_queue_id() != new_queue_place.id.0 {
                         needs_refresh = true;

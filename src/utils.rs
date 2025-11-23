@@ -418,6 +418,6 @@ pub fn get_time_ago_desc(past_ts: i64) -> String {
         format!("{mins}m ago")
     }
     else {
-        format!("just now")
+        "just now".to_string()
     }
 }

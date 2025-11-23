@@ -9,7 +9,6 @@ use std::{
 use time::{format_description, Date};
 use derivative::Derivative;
 use ashpd::desktop::file_chooser::SelectedFiles;
-use async_channel::Sender;
 use super::{artist_tag::ArtistTag, Library};
 use crate::{
     cache::{placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING}, Cache, CacheState},
@@ -619,7 +618,7 @@ impl AlbumContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(None);
+                let row = SongRow::new(None, None);
                 row.set_index_visible(true);
                 row.set_thumbnail_visible(false);
                 item.property_expression("item")

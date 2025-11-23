@@ -4,9 +4,23 @@
     <style>
       <class name="padding-6"/>
     </style>
-    <property name="spacing">6</property>
+    <!-- We cannot use GtkBox's spacing here, as that'll pad both sides of playing_indicator
+    even when it's hidden, creating a 12px space instead of 6px.-->
+    <child>
+      <object class="GtkRevealer" id="playing_indicator">
+        <property name="transition-type">slide-right</property>
+        <property name="visible">false</property>
+        <property name="child">
+          <object class="GtkImage">
+            <property name="margin-end">6</property>
+            <property name="icon-name">play-symbolic</property>
+          </object>
+        </property>
+      </object>
+    </child>
     <child>
       <object class="GtkLabel" id="index">
+        <property name="margin-end">6</property>
         <property name="label">NaN</property>
         <property name="visible">false</property>
         <style>
@@ -19,6 +33,7 @@
         <property name="halign">3</property>
         <property name="valign">3</property>
         <property name="overflow">hidden</property>
+        <property name="margin-end">6</property>
         <style>
           <class name="border-radius-6"/>
         </style>

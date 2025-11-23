@@ -31,7 +31,7 @@ use super::{
 
 mod imp {
     use std::{cell::Cell, sync::OnceLock};
-    use async_channel::Sender;
+    
     use glib::subclass::Signal;
 
     use super::*;
@@ -496,7 +496,7 @@ impl DynamicPlaylistEditorView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache));
+                let row = SongRow::new(Some(cache), None);
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);

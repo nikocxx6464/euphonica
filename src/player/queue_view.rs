@@ -229,7 +229,10 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache.clone()));
+                let row = SongRow::new(Some(cache.clone()), Some(&player));
+                row.set_index_visible(false);
+                row.set_playing_indicator_visible(true);
+
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -238,7 +241,6 @@ impl QueueView {
                 item.property_expression("item")
                     .chain_property::<Song>("album")
                     .bind(&row, "first-attrib-text", gtk::Widget::NONE);
-
                 row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
                 item.property_expression("item")
                     .chain_property::<Song>("artist")

@@ -359,7 +359,7 @@ impl DynamicPlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache));
+                let row = SongRow::new(Some(cache), None);
                 row.set_index_visible(false);
                 row.set_thumbnail_visible(true);
                 item.property_expression("item")

@@ -704,7 +704,7 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache));
+                let row = SongRow::new(Some(cache), None);
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);
@@ -744,7 +744,7 @@ impl PlaylistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache));
+                let row = SongRow::new(Some(cache), None);
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);

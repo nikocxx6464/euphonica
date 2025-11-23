@@ -818,7 +818,7 @@ pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str
         if to_overwrite != dp.name {
             if let Err(db_err) = tx
                 .execute("update images set key = ?1 where key = ?2", params![
-                    &format!("dynamic_playlist:{}", to_overwrite),
+                    &format!("dynamic_playlist:{to_overwrite}"),
                     &format!("dynamic_playlist:{}", dp.name),
                 ]) {
                     tx.rollback().map_err(Error::DbError)?;
@@ -971,7 +971,7 @@ pub fn delete_dynamic_playlist(name: &str) -> Result<(), Error> {
         .map_err(Error::DbError)?;
 
     tx
-        .execute("delete from images where key = ?1", params![&format!("dynamic_playlist:{}", name)])
+        .execute("delete from images where key = ?1", params![&format!("dynamic_playlist:{name}")])
         .map_err(Error::DbError)?;
 
     tx.commit()?;

@@ -17,7 +17,7 @@ use crate::{
     client::{ClientState, ConnectionState},
     common::{DynamicPlaylist, INode},
     library::{DynamicPlaylistEditorView, playlist_row::PlaylistRow},
-    utils::{g_cmp_str_options, g_search_substr, settings_manager},
+    utils::{g_cmp_str_options, settings_manager},
     window::EuphonicaWindow
 };
 
@@ -449,7 +449,7 @@ impl DynamicPlaylistView {
         window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
-        content_view.setup(self, &library, &client_state, cache.clone(), &window);
+        content_view.setup(self, library, client_state, cache.clone(), window);
         self.imp().content_page.connect_hidden(move |_| {
             content_view.unbind();
         });

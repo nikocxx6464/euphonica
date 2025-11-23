@@ -9,7 +9,6 @@ use std::{
     rc::Rc,
 };
 use ashpd::desktop::file_chooser::SelectedFiles;
-use async_channel::Sender;
 use derivative::Derivative;
 
 use super::{AlbumCell, Library};
@@ -522,7 +521,7 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = SongRow::new(Some(cache));
+                let row = SongRow::new(Some(cache), None);
                 item.property_expression("item")
                     .chain_property::<Song>("name")
                     .bind(&row, "name", gtk::Widget::NONE);

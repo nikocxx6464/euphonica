@@ -1,6 +1,7 @@
 use glib::{
     closure_local,
     clone,
+    WeakRef,
     Object,
     SignalHandlerId,
     ParamSpec,
@@ -10,15 +11,13 @@ use glib::{
 };
 use gtk::{gdk, glib, prelude::*, subclass::prelude::*, CompositeTemplate};
 use std::{
-    cell::{Cell, OnceCell, RefCell},
+    cell::{Cell, OnceCell, Ref, RefCell},
     rc::Rc,
 };
 use once_cell::sync::Lazy;
 
 use crate::{
-    cache::{placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER, Cache, CacheState},
-    common::{CoverSource, Song, SongInfo, Marquee},
-    utils::strip_filename_linux,
+    cache::{Cache, CacheState, placeholders::ALBUMART_THUMBNAIL_PLACEHOLDER}, common::{CoverSource, Marquee, Song, SongInfo}, player::Player, utils::strip_filename_linux
 };
 
 use super::QualityGrade;
@@ -30,6 +29,8 @@ mod imp {
     #[derive(Default, CompositeTemplate)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/song-row.ui")]
     pub struct SongRow {
+        #[template_child]
+        pub playing_indicator: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub index: TemplateChild<gtk::Label>,
         #[template_child]
@@ -54,7 +55,9 @@ mod imp {
         pub third_attrib_text: TemplateChild<gtk::Label>,
         pub song: RefCell<Option<Song>>,
         pub thumbnail_signal_ids: RefCell<Option<(SignalHandlerId, SignalHandlerId)>>,
+        pub playing_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub player: WeakRef<Player>,
         pub thumbnail_source: Cell<CoverSource>
     }
 
@@ -102,6 +105,8 @@ mod imp {
         fn properties() -> &'static [ParamSpec] {
             static PROPERTIES: Lazy<Vec<ParamSpec>> = Lazy::new(|| {
                 vec![
+                    ParamSpecBoolean::builder("playing-indicator-visible").build(),
+                    ParamSpecBoolean::builder("is-playing").build(),
                     ParamSpecBoolean::builder("index-visible").build(),
                     ParamSpecString::builder("index").build(),
                     ParamSpecBoolean::builder("thumbnail-visible").build(),
@@ -121,6 +126,8 @@ mod imp {
 
         fn property(&self, _id: usize, pspec: &ParamSpec) -> glib::Value {
             match pspec.name() {
+                "playing-indicator-visible" => self.playing_indicator.is_visible().to_value(),
+                "is-playing" => self.playing_indicator.is_child_revealed().to_value(),
                 "index-visible" => self.thumbnail.is_visible().to_value(),
                 "index" => self.index.label().to_value(),
                 "thumbnail-visible" => self.thumbnail.is_visible().to_value(),
@@ -140,6 +147,16 @@ mod imp {
         fn set_property(&self, _id: usize, value: &glib::Value, pspec: &ParamSpec) {
             let obj = self.obj();
             match pspec.name() {
+                "playing-indicator-visible" => {
+                    if let Ok(vis) = value.get::<bool>() {
+                        self.playing_indicator.set_visible(vis);
+                    }
+                }
+                "is-playing" => {
+                    if let Ok(vis) = value.get::<bool>() {
+                        self.playing_indicator.set_reveal_child(vis);
+                    }
+                }
                 "index-visible" => {
                     if let Ok(vis) = value.get::<bool>() {
                         self.index.set_visible(vis);
@@ -196,6 +213,9 @@ mod imp {
                 cache_state.disconnect(set_id);
                 cache_state.disconnect(clear_id);
             }
+            if let (Some(player), Some(id)) = (self.player.upgrade(), self.playing_signal_id.take()) {
+                player.disconnect(id);
+            }
         }
     }
 
@@ -217,8 +237,8 @@ impl SongRow {
     pub fn new(
         // If not given, will not set up thumbnail fetching
         cache: Option<Rc<Cache>>,
-        // set_thumbnail_signal: &str,
-        // clear_thumbnail_signal: &str
+        // If not given, will not set up is-playing indicator
+        player: Option<&Player>
     ) -> Self {
         let res: Self = Object::builder().build();
         if let Some(cache) = cache {
@@ -226,7 +246,6 @@ impl SongRow {
             let _ = res.imp().cache.set(cache);
             let _ = res.imp().thumbnail_signal_ids.replace(Some((
                 cache_state.connect_closure(
-                    // set_thumbnail_signal,
                     "album-art-downloaded",
                     false,
                     closure_local!(
@@ -252,7 +271,6 @@ impl SongRow {
                     ),
                 ),
                 cache_state.connect_closure(
-                    // clear_thumbnail_signal,
                     "album-art-cleared",
                     false,
                     closure_local!(
@@ -280,8 +298,41 @@ impl SongRow {
             )));
         }
 
+        if let Some(player) = player {
+            res.imp().player.set(Some(player));
+
+            let _ = res.imp().playing_signal_id.replace(Some(
+                player.connect_notify_local(
+                    Some("queue-id"),
+                    clone!(
+                        #[weak]
+                        res,
+                        move |player, _| {
+                            res.update_playing_indicator(player);
+                        }
+                    )
+                ))
+            );
+            res.update_playing_indicator(player);
+        }
+
         res
     }
+
+    fn update_playing_indicator(&self, player: &Player) {
+        match (
+            player.queue_id(),
+            self.song().as_ref().map(|s| s.get_queue_id())
+        ) {
+            (Some(id), Some(own_id)) => {
+                self.set_is_playing(id == own_id);
+            }
+            _ => {
+                self.set_is_playing(false);
+            }
+        }
+    }
+
 
     fn clear_thumbnail(&self) {
         self.imp().thumbnail_source.set(CoverSource::None);
@@ -318,6 +369,14 @@ impl SongRow {
         if let Some(_) = self.imp().song.take() {
             self.clear_thumbnail();
         }
+    }
+
+    pub fn set_playing_indicator_visible(&self, vis: bool) {
+        self.imp().playing_indicator.set_visible(vis);
+    }
+
+    pub fn set_is_playing(&self, playing: bool) {
+        self.imp().playing_indicator.set_reveal_child(playing);
     }
 
     pub fn set_index_visible(&self, vis: bool) {
@@ -378,5 +437,9 @@ impl SongRow {
 
     pub fn end_widget(&self) -> Option<gtk::Widget> {
         self.imp().center_box.end_widget()
+    }
+
+    pub fn song<'a>(&'a self) -> Ref<'a, Option<Song>> {
+        self.imp().song.borrow()
     }
 }

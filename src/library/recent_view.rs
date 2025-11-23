@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::{cell::Cell, sync::OnceLock};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -7,7 +8,7 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 
-use glib::{clone, closure_local, Properties, WeakRef};
+use glib::{clone, closure_local, Properties, WeakRef, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
@@ -15,10 +16,6 @@ use crate::{
 };
 
 mod imp {
-    use std::{cell::{Cell, OnceCell}, sync::OnceLock};
-
-    use glib::subclass::Signal;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -457,7 +454,7 @@ impl RecentView {
             Some(&song_list),
             move |obj| {
                 let song = obj.downcast_ref::<Song>().unwrap();
-                let row = SongRow::new(Some(cache.clone()));
+                let row = SongRow::new(Some(cache.clone()), None);
                 // Manually bind attributes here
                 row.set_name(song.get_name());
                 row.set_quality_grade(song.get_quality_grade());

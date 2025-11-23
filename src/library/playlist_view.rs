@@ -13,7 +13,7 @@ use std::{cell::OnceCell, sync::OnceLock};
 use super::Library;
 use crate::{
     library::PlaylistContentView,
-    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, g_search_substr, settings_manager}, window::EuphonicaWindow
+    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, settings_manager}, window::EuphonicaWindow
 };
 
 // Playlist view implementation

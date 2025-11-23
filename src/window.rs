@@ -851,7 +851,7 @@ impl EuphonicaWindow {
         win.restore_window_state();
         win.imp()
             .queue_view
-            .setup(&app.get_player(), app.get_cache(), &client_state, win.clone());
+            .setup(app.get_player(), app.get_cache(), &client_state, win.clone());
         win.imp().recent_view.setup(
             app.get_library(),
             app.get_player(),
@@ -874,7 +874,7 @@ impl EuphonicaWindow {
             app.get_cache()
         );
         win.imp().dyn_playlist_view.setup(
-            &app.get_library(),
+            app.get_library(),
             app.get_cache(),
             &app.get_client().get_client_state(),
             &win,
@@ -886,7 +886,7 @@ impl EuphonicaWindow {
             &win,
         );
         win.imp().sidebar.setup(&win, &app);
-        win.imp().player_bar.setup(&app.get_player());
+        win.imp().player_bar.setup(app.get_player());
 
         // Now that all the components are ready, we can start handling backend state changes
         win.imp()
@@ -942,7 +942,7 @@ impl EuphonicaWindow {
                 }
             )
         );
-        let _ = win.imp().player.set(Some(player));
+        win.imp().player.set(Some(player));
 
         win.imp().stack.connect_visible_child_name_notify(
             clone!(
@@ -984,6 +984,16 @@ impl EuphonicaWindow {
         // Refresh background
         win.queue_new_background();
         win
+    }
+
+    pub fn update_background_css_classes(&self) {
+        if self.imp().use_album_art_bg.get() || self.imp().use_visualizer.get() {
+            if !self.imp().content.has_css_class("no-shading") {
+                self.imp().content.add_css_class("no-shading");
+            }
+        } else if self.imp().content.has_css_class("no-shading") {
+            self.imp().content.remove_css_class("no-shading");
+        }
     }
 
     pub fn get_stack(&self) -> gtk::Stack {
@@ -1290,6 +1300,22 @@ impl EuphonicaWindow {
             .transform_to(|_, val: u64| Some(format!("Background task(s): {val}").to_value()))
             .sync_create()
             .build();
+
+        // Remove default libadwaita sidebar backgrounds when using
+        // album art as background, or the visualiser is enabled, or both.
+        self.connect_notify_local(
+            Some("use-album-art-as-background"),
+            move |win, _| {
+                win.update_background_css_classes();
+            }
+        );
+        self.connect_notify_local(
+            Some("use-visualizer"),
+            move |win, _| {
+                win.update_background_css_classes();
+            }
+        );
+        self.update_background_css_classes();
     }
 
     fn setup_signals(&self) {
