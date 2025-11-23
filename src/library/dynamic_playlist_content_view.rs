@@ -16,7 +16,7 @@ use crate::{
     cache::{Cache, placeholders::ALBUMART_PLACEHOLDER, sqlite},
     client::ClientState,
     common::{ContentView, DynamicPlaylist, Song, SongRow, dynamic_playlist::AutoRefresh},
-    utils::{self, format_secs_as_duration}, window::EuphonicaWindow,
+    utils::{self, format_secs_as_duration, get_time_ago_desc}, window::EuphonicaWindow,
 };
 
 mod imp {
@@ -39,7 +39,9 @@ mod imp {
         pub title: TemplateChild<gtk::Label>,
 
         #[template_child]
-        pub last_modified: TemplateChild<gtk::Label>,
+        pub last_refreshed: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub rule_count: TemplateChild<gtk::Label>,
         #[template_child]
         pub track_count: TemplateChild<gtk::Label>,
         #[template_child]
@@ -119,7 +121,9 @@ mod imp {
                         this.replace_queue.set_sensitive(false);
                         // Fetch from scratch & update cache
                         library.fetch_dynamic_playlist(dp.clone(), true);
-                        // TODO: Update the "last refreshed" UI text
+                        this.last_refreshed.set_label(&get_time_ago_desc(
+                            OffsetDateTime::now_utc().unix_timestamp()
+                        ));
                     }
                 }
             ));
@@ -490,9 +494,14 @@ impl DynamicPlaylistContentView {
                             } else {
                                 library.fetch_cached_dynamic_playlist(&dp.name);
                             }
+                            this.imp().last_refreshed.set_label(&get_time_ago_desc(last_refresh));
                         } else {
                             library.fetch_dynamic_playlist(dp.clone(), true);
+                            this.imp().last_refreshed.set_label(
+                                &get_time_ago_desc(OffsetDateTime::now_utc().unix_timestamp())
+                            );
                         }
+                        this.imp().rule_count.set_label(&(dp.rules.len() + dp.ordering.len()).to_string());
                         this.imp().dp.replace(Some(dp));
                     }
                     other => {

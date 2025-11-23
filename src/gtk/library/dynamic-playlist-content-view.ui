@@ -73,21 +73,46 @@
                       </object>
                     </child>
                     <child>
-                      <object class="GtkBox" id="metadata_box">
-                        <property name="spacing">12</property>
+                      <object class="AdwWrapBox" id="metadata_box">
+                        <property name="justify">0</property>
+                        <property name="justify-last-line">false</property>
+                        <property name="align">0.0</property>
+                        <property name="child-spacing">12</property>
                         <child>
                           <object class="GtkBox">
                             <property name="orientation">1</property>
                             <child>
                               <object class="GtkLabel">
-                                <property name="label" translatable="true">Last modified</property>
+                                <property name="label" translatable="true">Last refreshed</property>
                                 <style>
                                   <class name="caption-heading"/>
                                 </style>
                               </object>
                             </child>
                             <child>
-                              <object class="GtkLabel" id="last_modified">
+                              <object class="GtkLabel" id="last_refreshed">
+                                <property name="label">-</property>
+                                <style>
+                                  <class name="caption"/>
+                                </style>
+                              </object>
+                            </child>
+                          </object>
+                        </child>
+
+                        <child>
+                          <object class="GtkBox">
+                            <property name="orientation">1</property>
+                            <child>
+                              <object class="GtkLabel">
+                                <property name="label" translatable="true">Rules</property>
+                                <style>
+                                  <class name="caption-heading"/>
+                                </style>
+                              </object>
+                            </child>
+                            <child>
+                              <object class="GtkLabel" id="rule_count"> <!-- Count both filter and order rules -->
                                 <property name="label">-</property>
                                 <style>
                                   <class name="caption"/>

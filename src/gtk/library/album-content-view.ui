@@ -19,6 +19,7 @@
             <setter object="artists_box" property="halign">center</setter>
             <setter object="rating_box" property="halign">center</setter>
             <setter object="metadata_box" property="halign">center</setter>
+            <setter object="artists_box" property="align">0.5</setter>
           </object>
         </child>
         <property name="child">
@@ -68,6 +69,9 @@
                       <object class="AdwWrapBox" id="artists_box">
                         <property name="child-spacing">3</property>
                         <property name="line-spacing">3</property>
+                        <property name="justify">0</property>
+                        <property name="justify-last-line">false</property>
+                        <property name="align">0.0</property>
                       </object>
                     </child>
                     <child>

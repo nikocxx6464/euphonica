@@ -13,6 +13,7 @@ use std::{
 use time::{Date, Month, OffsetDateTime};
 use derivative::Derivative;
 use crate::cache::{get_image_cache_path, sqlite};
+use crate::utils::get_time_ago_desc;
 
 use super::Stickers;
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
@@ -285,41 +286,7 @@ impl Song {
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
         if let Some(then) = self.get_last_played() {
-            let now = OffsetDateTime::now_utc();
-            let diff_days = (
-                now.unix_timestamp() - then.unix_timestamp()
-            ) as f64 / 86400.0;
-            if diff_days <= 0.0 {
-                None
-            }
-            else if diff_days >= 365.0 {
-                let years = (diff_days / 365.0).floor() as u32;
-                if years == 1 {
-                    Some("last year".to_owned())
-                }
-                else {
-                    Some(format!("{years} years ago"))
-                }
-            }
-            else if diff_days >= 30.0 {
-                // Just let a month be 30 days long on average :)
-                let months = (diff_days / 30.0).floor() as u32;
-                if months == 1 {
-                    Some("last month".to_owned())
-                }
-                else {
-                    Some(format!("{months} years ago"))
-                }
-            }
-            else if diff_days >= 2.0 {
-                Some(format!("{diff_days:.0} days ago"))
-            }
-            else if diff_days >= 1.0 {
-                Some("yesterday".to_owned())
-            }
-            else {
-                Some("today".to_owned())
-            }
+            Some(get_time_ago_desc(then.unix_timestamp()))
         }
         else {
             None

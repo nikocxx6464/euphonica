@@ -351,7 +351,7 @@ pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box
 }
 
 
-/// Imports a type that implements Deserialize from a JSON file.
+/// Import a type that implements Deserialize from a JSON file.
 ///
 /// # Arguments
 /// * `file_path` - The path to the JSON file.
@@ -366,4 +366,58 @@ pub fn import_from_json<T: DeserializeOwned>(file_path: &str) -> Result<T, Box<d
     let deserialized_data = serde_json::from_reader(reader)?;
 
     Ok(deserialized_data)
+}
+
+
+/// Describe how long ago was a timestamp compared to now.
+///
+/// # Arguments
+/// * `past_ts` - A Unix timestamp in the past. If a timestamp in the future
+/// is given, will treat as right now.
+/// TODO: translations
+pub fn get_time_ago_desc(past_ts: i64) -> String {
+    let now = OffsetDateTime::now_utc();
+    let diff = (
+        now.unix_timestamp() - past_ts
+    ) as f64;
+    let diff_days = diff / 86400.0;
+    if diff_days <= 0.0 {
+        String::from("now")
+    }
+    else if diff_days >= 365.0 {
+        let years = (diff_days / 365.0).floor() as u32;
+        if years == 1 {
+            String::from("last year")
+        }
+        else {
+            format!("{years} years ago")
+        }
+    }
+    else if diff_days >= 30.0 {
+        // Just let a month be 30 days long on average :)
+        let months = (diff_days / 30.0).floor() as u32;
+        if months == 1 {
+            String::from("last month")
+        }
+        else {
+            format!("{months} months ago")
+        }
+    }
+    else if diff_days >= 2.0 {
+        format!("{diff_days:.0} days ago")
+    }
+    else if diff_days >= 1.0 {
+        String::from("yesterday")
+    }
+    else if diff >= 3600.0 {
+        let hours = (diff / 3600.0).floor() as u32;
+        format!("{hours}h ago")
+    }
+    else if diff >= 60.0 {
+        let mins = (diff / 60.0).floor() as u32;
+        format!("{mins}m ago")
+    }
+    else {
+        format!("just now")
+    }
 }
