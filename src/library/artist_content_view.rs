@@ -91,6 +91,7 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
+        #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool> // Enables queuing all songs from this artist efficiently
     }
 

@@ -12,7 +12,7 @@ use mpd::{
     song::Id,
     Channel, EditAction, Idle, Output, SaveMode, Subsystem,
 };
-use zbus::{Connection as ZConnection, Proxy as ZProxy, Result as ZResult};
+use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;

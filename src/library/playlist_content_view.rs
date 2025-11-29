@@ -168,6 +168,7 @@ mod imp {
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
         pub filepath_sender: OnceCell<Sender<String>>,
+        #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
         pub window: OnceCell<EuphonicaWindow>,
         pub library: OnceCell<Library>,
