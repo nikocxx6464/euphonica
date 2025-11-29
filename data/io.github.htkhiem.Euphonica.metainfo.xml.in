@@ -80,6 +80,8 @@
         <p>Refactor: various UI tweaks &amp; performance optimisations. Notably: content views are now centered when in the mini-UI layout; song title marquees are now enabled for all song row widgets; the sort options widgets have been restyled to be in line with existing Libadwaita apps such as Nautilus.</p>
         <p>Refactor: max background blur radius raised to 2048px to allow achieving a simple gradient-like look.</p>
         <p>Refactor: reduced unnecessary async poll loops.</p>
+        <p>Fix: freezing after suspend if connected to a remote MPD server.</p>
+        <p>Fix: bottom bar layout bugs when using ALSA output.</p>
       </description>
     </release>
     <release version="0.97.2-beta" date="2025-09-26">

@@ -430,10 +430,10 @@ impl RuleButton {
                     match query_lhs {
                         QueryLhs::File | QueryLhs::Base => 2,
                         QueryLhs::LastMod => 3,  // Should never hit this for this version
-                        QueryLhs::Any(_) => 9,
-                        QueryLhs::Album(_) => 10,
-                        QueryLhs::Artist(_) => 11,
-                        QueryLhs::AlbumArtist(_) => 12,
+                        QueryLhs::Any(_) => 8,
+                        QueryLhs::Album(_) => 9,
+                        QueryLhs::Artist(_) => 10,
+                        QueryLhs::AlbumArtist(_) => 11,
                     }
                 );
                 res.imp().on_rule_type_changed();
