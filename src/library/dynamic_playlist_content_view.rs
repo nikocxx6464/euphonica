@@ -458,6 +458,15 @@ impl DynamicPlaylistContentView {
         ));
     }
 
+    fn force_refresh(&self, dp: &DynamicPlaylist) {
+        if let Some(library) = self.get_library() {
+            library.fetch_dynamic_playlist(dp.clone(), true);
+            self.imp().last_refreshed.set_label(
+                &get_time_ago_desc(OffsetDateTime::now_utc().unix_timestamp())
+            );
+        }
+    }
+
     pub fn bind_by_name(&self, name: &str) {
         self.schedule_cover(name);
         let name = name.to_string();
@@ -490,16 +499,14 @@ impl DynamicPlaylistContentView {
                                 if let Some(window) = this.imp().window.upgrade() {
                                     window.send_simple_toast("Auto-refreshing...", 3);
                                 }
-                                library.fetch_dynamic_playlist(dp.clone(), true);
+                                this.force_refresh(&dp);
+
                             } else {
                                 library.fetch_cached_dynamic_playlist(&dp.name);
                             }
                             this.imp().last_refreshed.set_label(&get_time_ago_desc(last_refresh));
                         } else {
-                            library.fetch_dynamic_playlist(dp.clone(), true);
-                            this.imp().last_refreshed.set_label(
-                                &get_time_ago_desc(OffsetDateTime::now_utc().unix_timestamp())
-                            );
+                            this.force_refresh(&dp);
                         }
                         this.imp().rule_count.set_label(&(dp.rules.len() + dp.ordering.len()).to_string());
                         this.imp().dp.replace(Some(dp));

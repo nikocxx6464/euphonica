@@ -1,4 +1,5 @@
-use gtk::{glib, subclass::prelude::*, CompositeTemplate};
+use gtk::{prelude::*, glib, subclass::prelude::*, CompositeTemplate};
+use glib::clone;
 
 use crate::common::dynamic_playlist::Ordering;
 
@@ -46,10 +47,17 @@ glib::wrapper! {
 }
 
 impl OrderingButton {
-    pub fn new(ordering: Ordering) -> Self {
+    pub fn new(ordering: Ordering, wrap_box: &adw::WrapBox) -> Self {
         let res: Self = glib::Object::builder().build();
         let _ = res.imp().ordering.set(ordering);
         res.imp().label.set_label(ordering.readable_name());
+        res.connect_clicked(clone!(
+            #[weak]
+            wrap_box,
+            move |btn| {
+                wrap_box.remove(btn);
+            }
+        ));
 
         res
     }

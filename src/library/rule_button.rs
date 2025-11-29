@@ -372,8 +372,8 @@ impl RuleButton {
 
     // FIXME: Find a better way than referring to indices that still doesn't rely on
     // runtime searching.
-    pub fn from_rule(rule: Rule) -> Self {
-        let res: Self = Object::builder().build();
+    pub fn from_rule(rule: Rule, wrap_box: &adw::WrapBox) -> Self {
+        let res = Self::new(wrap_box);
         let imp = res.imp();
         let rule_type = imp.rule_type.get();
         let op = imp.op.get();
@@ -455,7 +455,15 @@ impl RuleButton {
             Rule::LastModified(ts) => {
                 rule_type.set_selected(3);
                 res.imp().on_rule_type_changed();
-                imp.rhs.set_text(&ts.to_string());
+                // Same as with last-played & last-skipped.
+                let days = ts / 86400;
+                if days % 7 == 0 {
+                    imp.lhs.set_text(&(days / 7).to_string());
+                    op.set_selected(1);
+                } else {
+                    imp.lhs.set_text(&days.to_string());
+                    op.set_selected(0);
+                }
             }
         };
 
@@ -468,6 +476,7 @@ impl RuleButton {
 
     pub fn get_rule(&self) -> Option<Rule> {
         if !self.is_valid() {
+            dbg!("Error: trying to compile an invalid RuleButton");
             None
         } else {
             match self.get_rule_type() {

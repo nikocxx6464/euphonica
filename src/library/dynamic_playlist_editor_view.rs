@@ -249,14 +249,7 @@ mod imp {
                         let ordering_box = obj.imp().ordering_box.get();
                         let idx = idx.unwrap().get::<u32>().unwrap();
                         let ordering = Ordering::VARIANTS[idx as usize];
-                        let btn = OrderingButton::new(ordering);
-                        btn.connect_clicked(clone!(
-                            #[weak]
-                            ordering_box,
-                            move |btn| {
-                                ordering_box.remove(btn);
-                            }
-                        ));
+                        let btn = OrderingButton::new(ordering, &ordering_box);
                         ordering_box.append(&btn);
                         let add_ordering_btn = obj.imp().add_ordering_btn.get();
                         ordering_box.reorder_child_after(
@@ -931,7 +924,7 @@ impl DynamicPlaylistEditorView {
         let add_btn = imp.add_rule_btn.get();
         let mut last_btn: Option<RuleButton> = None;
         for rule in dp.rules.into_iter() {
-            let btn = RuleButton::from_rule(rule);
+            let btn = RuleButton::from_rule(rule, &rules_box);
             rules_box.append(&btn);
             // Validate once at creation
             btn.validate();
@@ -960,15 +953,8 @@ impl DynamicPlaylistEditorView {
         let add_btn = imp.add_ordering_btn.get();
         let mut last_btn: Option<OrderingButton> = None;
         for ordering in dp.ordering.into_iter() {
-            let btn = OrderingButton::new(ordering);
+            let btn = OrderingButton::new(ordering, &ordering_box);
             ordering_box.append(&btn);
-            btn.connect_clicked(clone!(
-                #[weak]
-                ordering_box,
-                move |btn| {
-                    ordering_box.remove(btn);
-                }
-            ));
             last_btn.replace(btn);
         }
         if let Some(last_btn) = last_btn {
