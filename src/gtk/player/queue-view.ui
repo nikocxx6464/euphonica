@@ -40,7 +40,14 @@
             <property name="child">
               <object class="AdwToolbarView">
                 <child type="top">
-                  <object class="AdwHeaderBar"/>
+                  <object class="AdwHeaderBar">
+                    <child type="end">
+                      <object class="GtkMenuButton" id="edit_menu">
+                        <property name="menu-model">edit_menu_model</property>
+                        <property name="icon-name">view-more-symbolic</property>
+                      </object>
+                    </child>
+                  </object>
                 </child>
                 <property name="content">
                   <object class="EuphonicaPlayerPane" id="player_pane"/>
@@ -161,5 +168,11 @@
         </property>
       </object>
     </child>
+    <menu id="edit_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Clear rating</attribute>
+        <attribute name="action">queue-view.clear-rating</attribute>
+      </item>
+    </menu>
   </template>
 </interface>

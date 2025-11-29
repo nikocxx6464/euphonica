@@ -3,12 +3,22 @@ use aho_corasick::AhoCorasick;
 use gio::prelude::*;
 use gtk::gio;
 use gtk::Ordering;
-use image::{imageops::FilterType, ImageReader, DynamicImage, RgbImage};
+use image::{imageops::FilterType, DynamicImage, RgbImage};
 use mpd::status::AudioFormat;
 use once_cell::sync::Lazy;
+use serde::Serialize;
+use serde::de::DeserializeOwned;
+use time::OffsetDateTime;
+use time::UtcOffset;
+use time::format_description::{parse_owned, OwnedFormatItem};
+use time::error::IndeterminateOffset;
+use std::fs::File;
+use std::io::{BufWriter, BufReader};
 use std::sync::OnceLock;
 use std::fmt::Write;
-use std::{io::Cursor, sync::RwLock};
+use std::time::SystemTime;
+use std::time::UNIX_EPOCH;
+use std::sync::RwLock;
 use tokio::runtime::Runtime;
 
 /// Spawn a Tokio runtime on a new thread. This is needed by the zbus dependency.
@@ -40,26 +50,26 @@ pub fn format_secs_as_duration(seconds: f64) -> String {
     let seconds = total_seconds % 60;
 
     if days > 0 {
-        format!("{} days {:02}:{:02}:{:02}", days, hours, minutes, seconds)
+        format!("{days} days {hours:02}:{minutes:02}:{seconds:02}")
     } else if hours > 0 {
-        format!("{:02}:{:02}:{:02}", hours, minutes, seconds)
+        format!("{hours:02}:{minutes:02}:{seconds:02}")
     } else {
-        format!("{:02}:{:02}", minutes, seconds)
+        format!("{minutes:02}:{seconds:02}")
     }
 }
 
 pub fn format_bitrate(bitrate_kbps: u32) -> String {
     if bitrate_kbps < 5000 {
-        format!("{}kbps", bitrate_kbps)
+        format!("{bitrate_kbps}kbps")
     } else {
         let bitrate_mbps = bitrate_kbps as f64 / 1000.0;
         let mut buffer = String::new();
-        let result = write!(&mut buffer, "{:.2}Mbps", bitrate_mbps);
+        let result = write!(&mut buffer, "{bitrate_mbps:.2}Mbps");
 
         match result {
             Ok(_) => buffer,
             Err(e) => {
-                format!("{:?}", e)
+                format!("{e:?}")
             }
         }
     }
@@ -166,7 +176,7 @@ pub fn strip_filename_linux(path: &str) -> &str {
 }
 
 pub fn read_image_from_bytes(bytes: Vec<u8>) -> Option<DynamicImage> {
-    if let Some(dyn_img) = image::load_from_memory(&bytes).ok() {
+    if let Ok(dyn_img) = image::load_from_memory(&bytes) {
         Some(dyn_img)
     } else {
         println!("read_image_from_bytes: Unable to infer image format from content");
@@ -203,6 +213,57 @@ pub fn resize_convert_image(dyn_img: DynamicImage) -> (RgbImage, RgbImage) {
             .thumbnail(thumbnail_sizes.0, thumbnail_sizes.1)
             .into_rgb8(),
     )
+}
+
+pub fn current_unix_timestamp() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+}
+
+pub static LOCAL_TZ_OFFSET: OnceLock<Result<UtcOffset, IndeterminateOffset>> = OnceLock::new();
+
+/// Safely retrieve the initialized local UTC offset, computing it if necessary.
+/// Returns the UtcOffset or the error encountered during system lookup.
+fn get_local_tz_offset() -> Result<UtcOffset, IndeterminateOffset> {
+    *LOCAL_TZ_OFFSET.get_or_init(|| {
+        UtcOffset::current_local_offset()
+    })
+}
+
+/// Static storage for the determined locale format string.
+static LOCALE_FORMAT: OnceLock<OwnedFormatItem> = OnceLock::new();
+
+/// Determine the time format string based on the system's locale environment variables.
+/// A normal user wouldn't be juggling locales while using their computer so doing this
+/// once at startup suffices. For now assume Linux.
+///
+/// Note: This uses a simple heuristic to switch between common US and European formats.
+/// A fully robust solution would require a dedicated i18n crate.
+fn get_locale_format() -> &'static OwnedFormatItem {
+    LOCALE_FORMAT.get_or_init(|| {
+        // Check LC_TIME first, then LANG, then fall back to the default ISO-style format.
+        let locale_str = std::env::var("LC_TIME")
+            .or_else(|_| std::env::var("LANG"))
+            .unwrap_or_default()
+            .to_lowercase();
+
+        if locale_str.contains("us") || locale_str.contains("ca") {
+            // Example for North America: MM/DD/YYYY HH:MM:SS
+            parse_owned::<2>("[month padding:none]/[day padding:none]/[year] [hour]:[minute]:[second]").unwrap()
+        } else if locale_str.contains("gb") || locale_str.contains("de") || locale_str.contains("fr") || locale_str.contains("au") {
+            // Example for Europe/UK/Australia: DD/MM/YYYY HH:MM:SS
+            parse_owned::<2>("[day padding:none]/[month padding:none]/[year] [hour]:[minute]:[second]").unwrap()
+
+        } else {
+            // Default
+            parse_owned::<2>("[year]-[month]-[day] [hour]:[minute]:[second]").unwrap()
+        }
+    })
+}
+
+pub fn format_datetime_local_tz(utc_dt: OffsetDateTime) -> String {
+    let local_dt = get_local_tz_offset().map_or(utc_dt, |offset| utc_dt.to_offset(offset));
+
+    local_dt.format(get_locale_format()).unwrap()
 }
 
 // Build Aho-Corasick automatons only once. In case no delimiter or exception is
@@ -270,6 +331,93 @@ pub fn rebuild_artist_delim_exception_automaton() {
 /// - Additional checks at the controller level, to prevent new windows (after surfacing from background)
 /// from mistakenly reinitialising already-fetched models.
 pub trait LazyInit {
-    fn clear(&self);
     fn populate(&self);
+}
+
+
+/// Exports any type that implements Serialize to a JSON file.
+///
+/// # Arguments
+/// * `data` - A reference to the struct to serialize.
+/// * `file_path` - The path where the JSON file will be saved. Assume we have
+/// write access to this path already.
+pub fn export_to_json<T: Serialize>(data: &T, file_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let file = File::create(file_path)?;
+    // Use BufWriter for better performance (reduces system calls).
+    let writer = BufWriter::new(file);
+    serde_json::to_writer_pretty(writer, data)?;
+
+    Ok(())
+}
+
+
+/// Import a type that implements Deserialize from a JSON file.
+///
+/// # Arguments
+/// * `file_path` - The path to the JSON file.
+///
+/// # Returns
+/// A Result containing the deserialized struct or an error.
+/// We use `DeserializeOwned` here because we are creating the data from the file,
+/// so it must own its memory (not borrow from the input string).
+pub fn import_from_json<T: DeserializeOwned>(file_path: &str) -> Result<T, Box<dyn std::error::Error>> {
+    let file = File::open(file_path)?;
+    let reader = BufReader::new(file);
+    let deserialized_data = serde_json::from_reader(reader)?;
+
+    Ok(deserialized_data)
+}
+
+
+/// Describe how long ago was a timestamp compared to now.
+///
+/// # Arguments
+/// * `past_ts` - A Unix timestamp in the past. If a timestamp in the future
+/// is given, will treat as right now.
+/// TODO: translations
+pub fn get_time_ago_desc(past_ts: i64) -> String {
+    let now = OffsetDateTime::now_utc();
+    let diff = (
+        now.unix_timestamp() - past_ts
+    ) as f64;
+    let diff_days = diff / 86400.0;
+    if diff_days <= 0.0 {
+        String::from("now")
+    }
+    else if diff_days >= 365.0 {
+        let years = (diff_days / 365.0).floor() as u32;
+        if years == 1 {
+            String::from("last year")
+        }
+        else {
+            format!("{years} years ago")
+        }
+    }
+    else if diff_days >= 30.0 {
+        // Just let a month be 30 days long on average :)
+        let months = (diff_days / 30.0).floor() as u32;
+        if months == 1 {
+            String::from("last month")
+        }
+        else {
+            format!("{months} months ago")
+        }
+    }
+    else if diff_days >= 2.0 {
+        format!("{diff_days:.0} days ago")
+    }
+    else if diff_days >= 1.0 {
+        String::from("yesterday")
+    }
+    else if diff >= 3600.0 {
+        let hours = (diff / 3600.0).floor() as u32;
+        format!("{hours}h ago")
+    }
+    else if diff >= 60.0 {
+        let mins = (diff / 60.0).floor() as u32;
+        format!("{mins}m ago")
+    }
+    else {
+        "just now".to_string()
+    }
 }

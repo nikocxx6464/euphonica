@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaDynamicPlaylistView" parent="GtkWidget">
+    <child>
+      <object class="AdwNavigationView" id="nav_view">
+        <child>
+          <object class="AdwNavigationPage">
+            <property name="title">Dynamic Playlists</property>
+            <property name="tag">list</property>
+            <child>
+              <object class="AdwToolbarView">
+                <child type="top">
+					        <object class="AdwHeaderBar">
+                    <property name="show-title">false</property>
+                    <child type="start">
+                      <object class="GtkButton" id="show_sidebar">
+                        <property name="icon-name">dock-left-symbolic</property>
+                        <property name="tooltip-text" translatable="true">Show sidebar</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkToggleButton" id="search_btn">
+                        <property name="icon-name">edit-find-symbolic</property>
+                      </object>
+                    </child>
+                    <child type="end">
+                      <object class="GtkMenuButton" id="view_options_btn">
+                        <property name="menu-model">view_options_model</property>
+                        <property name="icon-name">view-sort-ascending-symbolic</property>
+                      </object>
+                    </child>
+                    <child type="start">
+                      <object class="AdwSplitButton" id="create_btn">
+                        <property name="icon-name">list-add-symbolic</property>
+                        <property name="menu-model">create_menu_model</property>
+                        <style>
+                          <class name="suggested-action"/>
+                        </style>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+                <child type="top">
+                  <object class="GtkSearchBar" id="search_bar">
+                    <property name="key-capture-widget">nav_view</property>
+                    <child>
+                      <object class="GtkSearchEntry" id="search_entry">
+                        <property name="search-delay">150</property>
+                        <property name="width-request">100</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+				        <property name="content">
+					        <object class="GtkScrolledWindow">
+                    <property name="hscrollbar-policy">never</property>
+                    <property name="vscrollbar-policy">automatic</property>
+                    <property name="propagate-natural-height">true</property>
+                    <property name="has-frame">false</property>
+                    <property name="vexpand">true</property>
+                    <property name="child">
+                      <object class="GtkListView" id="list_view">
+                        <property name="show-separators">true</property>
+                        <property name="single-click-activate">true</property>
+                        <style>
+                          <class name="no-bg"/>
+                        </style>
+                      </object>
+                    </property>
+                  </object>
+				        </property>
+			        </object>
+            </child>
+          </object>
+        </child>
+        <child>
+          <object class="AdwNavigationPage" id="content_page">
+            <property name="tag">content</property>
+            <!-- Not shown, no need to translate -->
+            <property name="title">Dynamic Playlist Info</property>
+            <child>
+              <object class="EuphonicaDynamicPlaylistContentView" id="content_view"></object>
+            </child>
+          </object>
+        </child>
+      </object>
+    </child>
+    <menu id="create_menu_model">
+      <item>
+        <attribute name="label" translatable="true">Import from JSON</attribute>
+        <attribute name="action">dp-view.import-json</attribute>
+      </item>
+    </menu>
+    <menu id="view_options_model">
+      <section>
+        <attribute name="label" translatable="yes">Sort By</attribute>
+        <item>
+          <attribute name="label" translatable="true">Playlist Name</attribute>
+          <attribute name="action">dp-view.sort-by</attribute>
+          <attribute name="target">6</attribute> <!-- See sortby enum -->
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Last Modified</attribute>
+          <attribute name="action">dp-view.sort-by</attribute>
+          <attribute name="target">7</attribute> <!-- See sortby enum -->
+        </item>
+      </section>
+      <section>
+        <attribute name="label" translatable="yes">Sort Direction</attribute>
+        <item>
+          <attribute name="label" translatable="true">Ascending</attribute>
+          <attribute name="action">dp-view.sort-direction</attribute>
+          <attribute name="target">1</attribute> <!-- See sortdir enum -->
+        </item>
+        <item>
+          <attribute name="label" translatable="true">Descending</attribute>
+          <attribute name="action">dp-view.sort-direction</attribute>
+          <attribute name="target">0</attribute> <!-- See sortdir enum -->
+        </item>
+      </section>
+    </menu>
+  </template>
+</interface>

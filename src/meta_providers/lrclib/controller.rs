@@ -32,7 +32,7 @@ impl LrcLibWrapper {
         if let Ok(res) = resp {
             return Some(res);
         }
-        return None;
+        None
     }
 }
 
@@ -77,7 +77,7 @@ impl MetadataProvider for LrcLibWrapper {
                     reqwest::StatusCode::OK => {
                         match resp.json::<Vec<LrcLibResponse>>() {
                             Ok(parsed) => {
-                                if parsed.len() > 0 {
+                                if !parsed.is_empty() {
                                     let mut best_idx: usize = 0;
                                     let mut best_diff: f32 = (parsed[0].duration
                                         - key.duration.map(|d| d.as_secs_f32()).unwrap_or(0.0))

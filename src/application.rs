@@ -227,12 +227,12 @@ impl EuphonicaApplication {
         app
     }
 
-    pub fn get_player(&self) -> Player {
-        self.imp().player.get().unwrap().clone()
+    pub fn get_player(&self) -> &Player {
+        self.imp().player.get().unwrap()
     }
 
-    pub fn get_library(&self) -> Library {
-        self.imp().library.get().unwrap().clone()
+    pub fn get_library(&self) -> &Library {
+        self.imp().library.get().unwrap()
     }
 
     pub fn get_cache(&self) -> Rc<Cache> {
@@ -305,7 +305,7 @@ impl EuphonicaApplication {
         let window = if let Some(window) = self.active_window() {
             window
         } else {
-            let window = EuphonicaWindow::new(&*self);
+            let window = EuphonicaWindow::new(self);
             window.upcast()
         };
         self.imp().player.get().unwrap().set_is_foreground(true);
@@ -356,7 +356,7 @@ impl EuphonicaApplication {
 
     pub fn show_preferences(&self) {
         let window = self.active_window().unwrap();
-        let prefs = Preferences::new(self.get_client(), self.get_cache(), &self.get_player());
+        let prefs = Preferences::new(self.get_client(), self.get_cache(), self.get_player());
         prefs.present(Some(&window));
         prefs.update();
     }

@@ -79,33 +79,33 @@ pub struct LastfmWiki {
     pub content: String,
 }
 
-impl Into<Wiki> for LastfmWiki {
-    fn into(self) -> Wiki {
+impl From<LastfmWiki> for Wiki {
+    fn from(val: LastfmWiki) -> Self {
         // Last.fm text content are not escaped (i.e. ampersands are kept verbatim)
         // YET they also contain <a> tags.
         // Treat the last a tag as the "Read more" link
-        match self.content.rfind("<a href") {
+        match val.content.rfind("<a href") {
             Some(href_start_idx) => {
-                if let Some(href_end_idx) = self.content.rfind("</a>.") {
-                    let atag: &str = &self.content[href_start_idx..href_end_idx];
+                if let Some(href_end_idx) = val.content.rfind("</a>.") {
+                    let atag: &str = &val.content[href_start_idx..href_end_idx];
                     Wiki {
-                        content: self.content[..href_start_idx].trim().to_owned(),
+                        content: val.content[..href_start_idx].trim().to_owned(),
                         url: Some(atag[(atag.find('"').unwrap() + 1)..atag.rfind('"').unwrap()].trim().to_owned()),
-                        attribution: self.content[(href_end_idx + 5)..].trim().to_owned()
+                        attribution: val.content[(href_end_idx + 5)..].trim().to_owned()
                     }
                 }
                 else {
                     // Invalid format. Only the main content is safe for display.
                     // Hardcode attribution since we cannot parse that bit.
                     Wiki {
-                        content: self.content[..href_start_idx].to_owned(),
+                        content: val.content[..href_start_idx].to_owned(),
                         url: None,
                         attribution: "Unable to parse licensing information for this text. Please refer to Last.fm's ToS for licensing terms.".to_owned()
                     }
                 }
             }
             None => Wiki {
-                content: self.content,
+                content: val.content,
                 url: None,
                 attribution: "Unable to parse licensing information for this text. Please refer to Last.fm's ToS for licensing terms.".to_owned()
             }
@@ -139,10 +139,7 @@ impl From<LastfmAlbum> for AlbumMeta {
         } else {
             image = Vec::with_capacity(0);
         }
-        let wiki: Option<Wiki> = match lfm.wiki {
-            Some(w) => Some(w.into()),
-            None => None,
-        };
+        let wiki: Option<Wiki> = lfm.wiki.map(|w| w.into());
 
         Self {
             name: lfm.name,
@@ -172,16 +169,16 @@ pub struct LastfmSimilarArtist {
     pub image: Vec<LastfmImage>,
 }
 
-impl Into<ArtistMeta> for LastfmSimilarArtist {
-    fn into(mut self) -> ArtistMeta {
-        let image: Vec<ImageMeta> = self.image.drain(..).map(LastfmImage::into).collect();
+impl From<LastfmSimilarArtist> for ArtistMeta {
+    fn from(mut val: LastfmSimilarArtist) -> Self {
+        let image: Vec<ImageMeta> = val.image.drain(..).map(LastfmImage::into).collect();
         ArtistMeta {
-            name: self.name,
+            name: val.name,
             mbid: None,
             tags: Vec::with_capacity(0),
             similar: Vec::with_capacity(0),
             image,
-            url: Some(self.url),
+            url: Some(val.url),
             bio: None,
             artist_type: ArtistType::UnrecognizedArtistType,
             gender: None,
@@ -212,30 +209,27 @@ pub struct LastfmArtist {
     pub bio: Option<LastfmWiki>,
 }
 
-impl Into<ArtistMeta> for LastfmArtist {
-    fn into(self) -> ArtistMeta {
-        let tags: Vec<Tag> = match self.tags {
+impl From<LastfmArtist> for ArtistMeta {
+    fn from(val: LastfmArtist) -> Self {
+        let tags: Vec<Tag> = match val.tags {
             TagsHelper::String(_) => Vec::with_capacity(0),
             TagsHelper::Nested(obj) => obj.tag,
         };
         let similar: Vec<ArtistMeta>;
-        if let Some(mut s) = self.similar {
+        if let Some(mut s) = val.similar {
             similar = s.artist.drain(..).map(LastfmSimilarArtist::into).collect();
         } else {
             similar = Vec::new();
         }
-        let bio: Option<Wiki> = match self.bio {
-            Some(w) => Some(w.into()),
-            None => None,
-        };
+        let bio: Option<Wiki> = val.bio.map(|w| w.into());
 
         ArtistMeta {
-            name: self.name,
-            mbid: self.mbid,
+            name: val.name,
+            mbid: val.mbid,
             tags,
             similar,
             image: Vec::with_capacity(0),
-            url: Some(self.url),
+            url: Some(val.url),
             bio,
             artist_type: ArtistType::UnrecognizedArtistType,
             gender: None,

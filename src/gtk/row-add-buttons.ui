@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <requires lib="gtk" version="4.0"/>
+  <template class="EuphonicaRowAddButtons" parent="GtkBox">
+    <child>
+      <object class="GtkButton" id="replace_queue">
+        <property name="tooltip-text" translatable="true">Replace queue with this song</property>
+        <property name="icon-name">play-symbolic</property>
+        <style>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkButton" id="append_queue">
+        <property name="tooltip-text" translatable="true">Add this song to the end of the queue</property>
+        <property name="icon-name">list-add-symbolic</property>
+        <style>
+          <class name="flat"/>
+        </style>
+      </object>
+    </child>
+  </template>
+</interface>

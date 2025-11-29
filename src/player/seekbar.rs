@@ -103,7 +103,7 @@ mod imp {
                 .bind_property("upper", &self.duration.get(), "label")
                 .transform_to(|_, dur: f64| {
                     if dur > 0.0 {
-                        return Some(format_secs_as_duration(dur as f64));
+                        return Some(format_secs_as_duration(dur));
                     }
                     Some("--:--".to_owned())
                 })

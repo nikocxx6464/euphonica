@@ -1,4 +1,5 @@
 use core::time::Duration;
+use std::cell::Ref;
 use gtk::glib;
 use gtk::prelude::*;
 use gtk::subclass::prelude::*;
@@ -10,9 +11,11 @@ use std::{
     path::Path
 };
 use time::{Date, Month, OffsetDateTime};
-
+use derivative::Derivative;
 use crate::cache::{get_image_cache_path, sqlite};
+use crate::utils::get_time_ago_desc;
 
+use super::Stickers;
 use super::{artists_to_string, parse_mb_artist_tag, AlbumInfo, ArtistInfo};
 
 // Mostly for eyecandy
@@ -75,10 +78,13 @@ fn parse_date(datestr: &str) -> Option<Date> {
 
 /// We define our own Song struct for more convenient handling, especially with
 /// regards to optional fields and tags such as albums.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Derivative)]
+#[derivative(Default)]
 pub struct SongInfo {
     // TODO: Might want to refactor to Into<Cow<'a, str>>
+    #[derivative(Default(value = "String::from(\"\")"))]
     pub uri: String,
+    #[derivative(Default(value = "String::from(\"Untitled Song\")"))]
     pub title: String, // Might just be filename
     // last_mod: RefCell<Option<u64>>,
     pub artists: Vec<ArtistInfo>,
@@ -88,17 +94,19 @@ pub struct SongInfo {
     pub queue_pos: Option<u32>,  // Only set once at creation. Subsequent updates are kept in the Song GObject.
     // range: Option<Range>,
     pub album: Option<AlbumInfo>,
-    track: Cell<i64>,
-    disc: Cell<i64>,
+    #[derivative(Default(value = "Cell::new(-1)"))]
+    pub track: Cell<i64>,
+    #[derivative(Default(value = "Cell::new(-1)"))]
+    pub disc: Cell<i64>,
     // TODO: add albumsort
     // Store Date instead of string to save a tiny bit of memory.
     // Also gives us formatting flexibility in the future.
-    release_date: Option<Date>,
+    pub release_date: Option<Date>,
     // TODO: Add more fields for managing classical music, such as composer, ensemble and movement number
     quality_grade: QualityGrade,
     // MusicBrainz stuff
     mbid: Option<String>,
-    last_modified: Option<String>,
+    pub last_modified: Option<String>,
     pub last_played: Option<OffsetDateTime>
 }
 
@@ -116,32 +124,13 @@ impl SongInfo {
     }
 }
 
-impl Default for SongInfo {
-    fn default() -> Self {
-        Self {
-            uri: String::from(""),
-            title: String::from("Untitled Song"),
-            artists: Vec::new(),
-            artist_tag: None,
-            duration: None,
-            queue_id: None,
-            queue_pos: None,
-            album: None,
-            track: Cell::new(-1), // negative values indicate no track index
-            disc: Cell::new(-1),
-            release_date: None,
-            quality_grade: QualityGrade::Unknown,
-            mbid: None,
-            last_modified: None,
-            last_played: None
-        }
-    }
-}
-
 mod imp {
+    use std::cell::RefCell;
+
     use super::*;
     use glib::{
-        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64
+        ParamSpec, ParamSpecBoolean, ParamSpecInt64, ParamSpecObject, ParamSpecString, ParamSpecUInt, ParamSpecUInt64,
+        ParamSpecChar
     };
     use once_cell::sync::Lazy;
 
@@ -154,6 +143,7 @@ mod imp {
     #[derive(Debug)]
     pub struct Song {
         pub info: OnceCell<SongInfo>,
+        pub stickers: RefCell<Stickers>,
         pub is_playing: Cell<bool>
     }
 
@@ -165,6 +155,7 @@ mod imp {
         fn new() -> Self {
             Self {
                 info: OnceCell::new(),
+                stickers: RefCell::new(Stickers::default()),
                 is_playing: Cell::new(false)
             }
         }
@@ -185,6 +176,7 @@ mod imp {
                     // ParamSpecString::builder("last_mod").build(),
                     ParamSpecString::builder("artist").read_only().build(),
                     ParamSpecUInt64::builder("duration").read_only().build(),
+                    ParamSpecChar::builder("rating").read_only().build(),
                     ParamSpecUInt::builder("queue-id").build(),
                     ParamSpecUInt::builder("queue-pos").build(),
                     ParamSpecBoolean::builder("is-queued").read_only().build(),
@@ -219,6 +211,7 @@ mod imp {
                 // The composer part is optional.
                 "artist" => obj.get_artist_tag().to_value(),
                 "duration" => obj.get_duration().to_value(),
+                "rating" => obj.get_rating().unwrap_or(-1).to_value(),
                 "queue-id" => obj.get_queue_id().to_value(),
                 "queue-pos" => obj.get_queue_pos().to_value(),
                 "is-queued" => obj.is_queued().to_value(),
@@ -253,9 +246,29 @@ impl Song {
         Self::default()
     }
 
+    pub fn set_stickers(&self, stickers: Stickers) {
+        self.imp().stickers.replace(stickers);
+    }
+
+    pub fn stickers(&self) -> Ref<'_, Stickers> {
+        self.imp().stickers.borrow()
+    }
+
+    pub fn get_rating(&self) -> Option<i8> {
+        self.stickers().rating
+    }
+
+    pub fn set_rating(&self, new: Option<i8>) {
+        let old = self.get_rating();
+        if new != old {
+            self.imp().stickers.borrow_mut().rating = new;
+            self.notify("rating");
+        }
+    }
+
     // ALL of the getters below require that the info field be initialised!
     pub fn get_info(&self) -> &SongInfo {
-        &self.imp().info.get().unwrap()
+        self.imp().info.get().unwrap()
     }
 
     pub fn get_uri(&self) -> &str {
@@ -272,52 +285,11 @@ impl Song {
 
     pub fn get_last_played_desc(&self) -> Option<String> {
         // TODO: translations
-        if let Some(then) = self.get_last_played() {
-            let now = OffsetDateTime::now_utc();
-            let diff_days = (
-                now.unix_timestamp() - then.unix_timestamp()
-            ) as f64 / 86400.0;
-            if diff_days <= 0.0 {
-                None
-            }
-            else {
-                if diff_days >= 365.0 {
-                    let years = (diff_days / 365.0).floor() as u32;
-                    if years == 1 {
-                        Some("last year".to_owned())
-                    }
-                    else {
-                        Some(format!("{years} years ago"))
-                    }
-                }
-                else if diff_days >= 30.0 {
-                    // Just let a month be 30 days long on average :)
-                    let months = (diff_days / 30.0).floor() as u32;
-                    if months == 1 {
-                        Some("last month".to_owned())
-                    }
-                    else {
-                        Some(format!("{months} years ago"))
-                    }
-                }
-                else if diff_days >= 2.0 {
-                    Some(format!("{diff_days:.0} days ago"))
-                }
-                else if diff_days >= 1.0 {
-                    Some("yesterday".to_owned())
-                }
-                else {
-                    Some("today".to_owned())
-                }
-            }
-        }
-        else {
-            None
-        }
+        self.get_last_played().map(|then| get_time_ago_desc(then.unix_timestamp()))
     }
 
     pub fn get_last_played(&self) -> Option<OffsetDateTime> {
-        self.get_info().last_played.clone()
+        self.get_info().last_played
     }
 
     pub fn get_duration(&self) -> u64 {
@@ -409,7 +381,7 @@ impl Song {
             .build();
         if let Some(album) = self.get_album() {
             meta.set_album(Some(&album.title));
-            if album.artists.len() > 0 {
+            if !album.artists.is_empty() {
                 meta.set_album_artist(Some(
                     album
                         .artists
@@ -420,7 +392,7 @@ impl Song {
             }
         }
         let artists = self.get_artists();
-        if artists.len() > 0 {
+        if !artists.is_empty() {
             meta.set_artist(Some(
                 artists
                     .iter()
@@ -527,7 +499,7 @@ impl From<mpd::song::Song> for SongInfo {
                             None,
                             None,
                             Vec::with_capacity(0),
-                            res.quality_grade.clone(),
+                            res.quality_grade,
                         ));
                     } else {
                         println!("[WARNING] Multiple Album tags found. Only keeping the first one.");
@@ -619,7 +591,7 @@ impl From<mpd::song::Song> for SongInfo {
             album.mbid = album_mbid;
             album.albumsort = albumsort;
             album.albumartistsort = albumartistsort;
-            album.release_date = res.release_date.clone();
+            album.release_date = res.release_date;
             // Assume the albumartist IDs are given in the same order as the albumartist tags
             if let Some(album_artist_str) = albumartist.as_ref() {
                 album.add_artists_from_string(album_artist_str);

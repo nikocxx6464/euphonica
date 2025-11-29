@@ -2,31 +2,36 @@
 <gresources>
   <gresource prefix="/io/github/htkhiem/Euphonica">
     <file preprocess="xml-stripblanks">window.ui</file>
+    <file preprocess="xml-stripblanks">gtk/song-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/row-add-buttons.ui</file>
+    <file preprocess="xml-stripblanks">gtk/row-edit-buttons.ui</file>
     <file preprocess="xml-stripblanks">gtk/help-overlay.ui</file>
     <file preprocess="xml-stripblanks">gtk/sidebar-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/sidebar.ui</file>
     <file preprocess="xml-stripblanks">gtk/marquee.ui</file>
     <file preprocess="xml-stripblanks">gtk/rating.ui</file>
     <file preprocess="xml-stripblanks">gtk/theme-selector.ui</file>
+    <file preprocess="xml-stripblanks">gtk/content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/recent-view.ui</file>
-    <file preprocess="xml-stripblanks">gtk/library/recent-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-cell.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-tag.ui</file>
-    <file preprocess="xml-stripblanks">gtk/library/album-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/album-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-cell.ui</file>
-    <file preprocess="xml-stripblanks">gtk/library/artist-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/artist-content-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/folder-view.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/generic-row.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-content-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/dynamic-playlist-editor-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/rule-button.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/ordering-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-view.ui</file>
+    <file preprocess="xml-stripblanks">gtk/library/playlist-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/playlist-content-view.ui</file>
-    <file preprocess="xml-stripblanks">gtk/library/playlist-song-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/library/add-to-playlist-button.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/queue-view.ui</file>
-    <file preprocess="xml-stripblanks">gtk/player/queue-row.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/bar.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/pane.ui</file>
     <file preprocess="xml-stripblanks">gtk/player/seekbar.ui</file>
@@ -112,5 +117,6 @@
     <file preprocess="xml-stripblanks" alias="recent-symbolic.svg">gtk/icons/recent-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-at-line-down-symbolic.svg">gtk/icons/arrow-pointing-at-line-down-symbolic.svg</file>
     <file preprocess="xml-stripblanks" alias="arrow-pointing-away-from-line-up-symbolic.svg">gtk/icons/arrow-pointing-away-from-line-up-symbolic.svg</file>
+    <file preprocess="xml-stripblanks" alias="cross-small-symbolic.svg">gtk/icons/cross-small-symbolic.svg</file>
   </gresource>
 </gresources>

@@ -1,18 +1,18 @@
 use adw::subclass::prelude::*;
 use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
-use gtk::{gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
+use gtk::{gdk, gio, glib, prelude::*, BitsetIter, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
     cell::{OnceCell, RefCell},
     rc::Rc,
 };
-
+use derivative::Derivative;
 use mpd::error::{Error as MpdError, ErrorCode as MpdErrorCode, ServerError};
 
-use super::{Library, PlaylistSongRow};
+use super::Library;
 use crate::{
-    cache::Cache,
+    cache::{placeholders::ALBUMART_PLACEHOLDER, Cache},
     client::ClientState,
-    common::{INode, Song},
+    common::{RowEditButtons, INode, RowAddButtons, Song, SongRow},
     utils::format_secs_as_duration,
     window::EuphonicaWindow,
 };
@@ -78,17 +78,25 @@ impl HistoryStep {
 mod imp {
     use std::cell::Cell;
 
+    use ashpd::desktop::file_chooser::SelectedFiles;
+    use async_channel::Sender;
+    use gio::{ActionEntry, SimpleActionGroup};
     use mpd::SaveMode;
+
+    use crate::utils;
 
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-content-view.ui")]
     pub struct PlaylistContentView {
         #[template_child]
         pub infobox_revealer: TemplateChild<gtk::Revealer>,
         #[template_child]
         pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
+        #[template_child]
+        pub cover: TemplateChild<gtk::Image>,
         #[template_child]
         pub content_stack: TemplateChild<gtk::Stack>,
         #[template_child]
@@ -145,8 +153,11 @@ mod imp {
         #[template_child]
         pub delete: TemplateChild<gtk::Button>,
 
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub editing_song_list: gio::ListStore,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub sel_model: gtk::MultiSelection,
         pub is_editing: Cell<bool>,
         pub history: RefCell<Vec<HistoryStep>>,
@@ -156,6 +167,8 @@ mod imp {
         pub bindings: RefCell<Vec<Binding>>,
         pub cover_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
+        pub filepath_sender: OnceCell<Sender<String>>,
+        #[derivative(Default(value = "Cell::new(true)"))]
         pub selecting_all: Cell<bool>, // Enables queuing the entire playlist efficiently
         pub window: OnceCell<EuphonicaWindow>,
         pub library: OnceCell<Library>,
@@ -163,56 +176,6 @@ mod imp {
         // FIXME: Working around the scroll position bug. See src/player/queue_view.rs (same issue).
         pub last_scroll_pos: Cell<f64>,
         pub restore_last_pos: Cell<u8>
-    }
-
-    impl Default for PlaylistContentView {
-        fn default() -> Self {
-            Self {
-                title: TemplateChild::default(),
-                last_mod: TemplateChild::default(),
-                track_count: TemplateChild::default(),
-                infobox_revealer: TemplateChild::default(),
-                collapse_infobox: TemplateChild::default(),
-                runtime: TemplateChild::default(),
-                content_stack: TemplateChild::default(),
-                content: TemplateChild::default(),
-                editing_content: TemplateChild::default(),
-                content_scroller: TemplateChild::default(),
-                editing_content_scroller: TemplateChild::default(),
-                song_list: gio::ListStore::new::<Song>(),
-                editing_song_list: gio::ListStore::new::<Song>(),
-                is_editing: Cell::new(false),
-                history: RefCell::new(Vec::new()),
-                history_idx: Cell::new(0),
-                sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
-                action_row: TemplateChild::default(),
-                replace_queue: TemplateChild::default(),
-                append_queue: TemplateChild::default(),
-                replace_queue_text: TemplateChild::default(),
-                append_queue_text: TemplateChild::default(),
-                edit_playlist: TemplateChild::default(),
-                edit_cancel: TemplateChild::default(),
-                edit_undo: TemplateChild::default(),
-                edit_redo: TemplateChild::default(),
-                edit_apply: TemplateChild::default(),
-                sel_all: TemplateChild::default(),
-                sel_none: TemplateChild::default(),
-                rename_menu_btn: TemplateChild::default(),
-                delete_menu_btn: TemplateChild::default(),
-                rename: TemplateChild::default(),
-                new_name: TemplateChild::default(),
-                delete: TemplateChild::default(),
-                bindings: RefCell::new(Vec::new()),
-                cover_signal_id: RefCell::new(None),
-                cache: OnceCell::new(),
-                playlist: RefCell::new(None),
-                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-                window: OnceCell::new(),
-                library: OnceCell::new(),
-                last_scroll_pos: Cell::new(0.0),
-                restore_last_pos: Cell::new(0)
-            }
-        }
     }
 
     #[glib::object_subclass]
@@ -304,9 +267,9 @@ mod imp {
                         // TODO: l10n
                         this.selecting_all.replace(false);
                         this.replace_queue_text
-                            .set_label(format!("Play {}", n_sel).as_str());
+                            .set_label(format!("Play {n_sel}").as_str());
                         this.append_queue_text
-                            .set_label(format!("Queue {}", n_sel).as_str());
+                            .set_label(format!("Queue {n_sel}").as_str());
                     }
                 }
             ));
@@ -326,6 +289,67 @@ mod imp {
                     sel_model.unselect_all();
                 }
             ));
+
+            // Edit actions
+            let obj = self.obj();
+            let action_set_cover = ActionEntry::builder("set-cover")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        if let Some(sender) = obj.imp().filepath_sender.get() {
+                            let sender = sender.clone();
+                            utils::tokio_runtime().spawn(async move {
+                                let maybe_files = SelectedFiles::open_file()
+                                    .title("Select a new cover")
+                                    .modal(true)
+                                    .multiple(false)
+                                    .send()
+                                    .await
+                                    .expect("ashpd file open await failure")
+                                    .response();
+
+                                if let Ok(files) = maybe_files {
+                                    let uris = files.uris();
+                                    if !uris.is_empty() {
+                                        let _ = sender.send_blocking(uris[0].to_string());
+                                    }
+                                }
+                                else {
+                                    println!("{maybe_files:?}");
+                                }
+                            });
+                        }
+                    }
+                ))
+                .build();
+            let action_clear_cover = ActionEntry::builder("clear-cover")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    #[upgrade_or]
+                    (),
+                    move |_, _, _| {
+                        let title = obj.imp().title.label();
+                        if !title.is_empty() {
+                            if let Some(library) = obj.imp().library.get() {
+                                obj.clear_cover();
+                                library.clear_playlist_cover(title.as_str());
+                            }
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_set_cover,
+                action_clear_cover
+            ]);
+            self.obj().insert_action_group("playlist-content-view", Some(&actions));
         }
     }
 
@@ -464,30 +488,34 @@ impl PlaylistContentView {
         library: Library,
         client_state: ClientState,
         cache: Rc<Cache>,
-        window: EuphonicaWindow,
+        window: &EuphonicaWindow,
     ) {
-        // cache.get_cache_state().connect_closure(
-        //     "album-art-downloaded",
-        //     false,
-        //     closure_local!(
-        //         #[weak(rename_to = this)]
-        //         self,
-        //         move |_: CacheState, folder_uri: String| {
-        //             if let Some(album) = this.imp().album.borrow().as_ref() {
-        //                 if folder_uri == album.get_uri() {
-        //                     this.update_cover(album.get_info());
-        //                 }
-        //             }
-        //         }
-        //     )
-        // );
+        // Set up channel for listening to cover dialog
+        let (sender, receiver) = async_channel::unbounded::<String>();
+        let _ = self.imp().filepath_sender.set(sender);
+        glib::MainContext::default().spawn_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                use futures::prelude::*;
+                // Allow receiver to be mutated, but keep it at the same memory address.
+                // See Receiver::next doc for why this is needed.
+                let mut receiver = std::pin::pin!(receiver);
+
+                while let Some(tag) = receiver.next().await {
+                    this.set_cover(&tag);
+                }
+            }
+        ));
+
+        let cache_state = cache.get_cache_state();
         self.imp()
             .window
-            .set(window)
+            .set(window.clone())
             .expect("PlaylistContentView: Cannot set reference to window");
         self.imp()
             .library
-            .set(library)
+            .set(library.clone())
             .expect("PlaylistContentView: Cannot set reference to library controller");
         client_state.connect_closure(
             "playlist-songs-downloaded",
@@ -529,8 +557,10 @@ impl PlaylistContentView {
 
         let replace_queue_btn = self.imp().replace_queue.get();
         replace_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -553,8 +583,10 @@ impl PlaylistContentView {
         ));
         let append_queue_btn = self.imp().append_queue.get();
         append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -612,7 +644,7 @@ impl PlaylistContentView {
                 let rename_from: Option<String>;
                 {
                     if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
-                        rename_from = playlist.get_name().map(&str::to_owned);
+                        rename_from = playlist.get_name().map(str::to_owned);
                     }
                     else {
                         rename_from = None;
@@ -629,18 +661,15 @@ impl PlaylistContentView {
 
                     match library.rename_playlist(&rename_from, &rename_to) {
                         Ok(()) => {} // Wait for idle to trigger a playlist refresh
-                        Err(e) => match e {
-                            Some(MpdError::Server(ServerError {code, pos: _, command: _, detail: _})) => {
-                                this.imp().window.get().unwrap().show_dialog(
-                                    "Rename Failed",
-                                    &(match code {
-                                        MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
-                                        MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
-                                        _ => format!("Internal error ({:?})", code)
-                                    })
-                                );
-                            }
-                            _ => {}
+                        Err(e) => if let Some(MpdError::Server(ServerError {code, pos: _, command: _, detail: _})) = e {
+                            this.imp().window.get().unwrap().show_dialog(
+                                "Rename Failed",
+                                &(match code {
+                                    MpdErrorCode::Exist => format!("There is already another playlist named \"{}\". Please pick another name.", &rename_to),
+                                    MpdErrorCode::NoExist => "Internal error: tried to rename a nonexistent playlist".to_owned(),
+                                    _ => format!("Internal error ({code:?})")
+                                })
+                            );
                         }
                     }
                 }
@@ -648,8 +677,10 @@ impl PlaylistContentView {
         ));
 
         delete_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 let library = this.imp().library.get().unwrap();
                 if let Some(playlist) = this.imp().playlist.borrow().as_ref() {
@@ -665,19 +696,43 @@ impl PlaylistContentView {
         let factory = SignalListItemFactory::new();
         let editing_factory = SignalListItemFactory::new();
 
-        // Create an empty `PlaylistSongRow` during setup
         factory.connect_setup(clone!(
-            #[weak(rename_to = this)]
-            self,
+            #[weak]
+            library,
             #[weak]
             cache,
             move |_, list_item| {
-                let library = this.imp().library.get().unwrap();
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
-                row.set_queue_controls_visible(true);
+                let row = SongRow::new(Some(cache), None);
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowAddButtons::new(&library);
+                row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
             }
         ));
@@ -687,45 +742,129 @@ impl PlaylistContentView {
             #[weak]
             cache,
             move |_, list_item| {
-                let library = this.imp().library.get().unwrap();
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let row = PlaylistSongRow::new(library.clone(), this.clone(), &item, cache);
-                row.set_edit_controls_visible(true);
+                let row = SongRow::new(Some(cache), None);
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                row.set_third_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "third-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowEditButtons::new(
+                    item,
+                    // Raise action
+                    clone!(
+                        #[weak]
+                        this,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            this.shift_backward(idx);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        this,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            this.shift_forward(idx);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        this,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            this.remove(idx);
+                        }
+                    )
+                );
+                row.set_end_widget(Some(&end_widget.into()));
                 item.set_child(Some(&row));
             }
         ));
 
-        // Tell factory how to bind `PlaylistSongRow` to one of our Playlist GObjects
-        [&factory, &editing_factory].iter().for_each(move |f| {
-            f.connect_bind(|_, list_item| {
-                // Get `Song` from `ListItem` (that is, the data side)
-                let item: &ListItem = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
+        factory.connect_bind(|_, list_item| {
+            // Get `Song` from `ListItem` (that is, the data side)
+            let item: Song = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Song>()
+                .expect("The item has to be a common::Song.");
 
-                // Get `PlaylistSongRow` from `ListItem` (the UI widget)
-                let child: PlaylistSongRow = item
-                    .child()
-                    .and_downcast::<PlaylistSongRow>()
-                    .expect("The child has to be an `PlaylistSongRow`.");
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
 
-                // Within this binding fn is where the cached album art texture gets used.
-                child.bind(item);
-            });
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child.on_bind(&item);
+        });
 
-            // When row goes out of sight, unbind from item to allow reuse with another.
-            f.connect_unbind(|_, list_item| {
-                // Get `PlaylistSongRow` from `ListItem` (the UI widget)
-                let child: PlaylistSongRow = list_item
-                    .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem")
-                    .child()
-                    .and_downcast::<PlaylistSongRow>()
-                    .expect("The child has to be an `PlaylistSongRow`.");
-                child.unbind();
-            });
+        editing_factory.connect_bind(|_, list_item| {
+            let item: Song = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .item()
+                .and_downcast::<Song>()
+                .expect("The item has to be a common::Song.");
+
+            let child: SongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
+
+            child.on_bind(&item);
+        });
+
+        factory.connect_unbind(|_, list_item| {
+            let child: SongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child.on_unbind();
+        });
+
+        editing_factory.connect_unbind(|_, list_item| {
+            let child: SongRow = list_item
+                .downcast_ref::<ListItem>()
+                .expect("Needs to be ListItem")
+                .child()
+                .and_downcast::<SongRow>()
+                .expect("The child has to be an `SongRow`.");
+            child.on_unbind();
         });
 
         editing_factory.connect_teardown(clone!(
@@ -768,22 +907,6 @@ impl PlaylistContentView {
         );
     }
 
-    /// Returns true if an album art was successfully retrieved.
-    /// On false, we will want to call cache.ensure_local_album_art()
-    // fn update_cover(&self, info: &PlaylistInfo) -> bool {
-    //     if let Some(cache) = self.imp().cache.get() {
-    //         if let Some(tex) = cache.load_cached_album_art(info, false, true) {
-    //             self.imp().cover.set_paintable(Some(&tex));
-    //             return true;
-    //         }
-    //         else {
-    //             self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
-    //             return false;
-    //         }
-    //     }
-    //     false
-    // }
-
     pub fn bind(&self, playlist: INode) {
         let title_label = self.imp().title.get();
         let last_mod_label = self.imp().last_mod.get();
@@ -803,7 +926,22 @@ impl PlaylistContentView {
         // Save binding
         bindings.push(last_mod_binding);
 
-        // self.update_cover();
+        // Fetch high resolution playlist cover
+        let handle = self.imp().cache.get().unwrap().load_cached_playlist_cover(
+            playlist.get_uri(), false, false
+        );
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+            self,
+            async move {
+                if let Some(tex) = handle.await.unwrap() {
+                    this.update_cover(&tex);
+                } else {
+                    this.clear_cover();
+                }
+            }
+        ));
+
         self.imp().playlist.borrow_mut().replace(playlist);
     }
 
@@ -845,6 +983,25 @@ impl PlaylistContentView {
                 })
                 .sum::<u64>() as f64,
         ));
+    }
+
+    /// Set a user-selected path as the new local avatar.
+    pub fn set_cover(&self, path: &str) {
+        let title = self.imp().title.label();
+        if !title.is_empty() {
+            if let Some(library) = self.imp().library.get() {
+                library.set_playlist_cover(title.as_str(), path);
+            }
+        }
+    }
+
+    fn update_cover(&self, tex: &gdk::Texture) {
+        // Set text in case there is no image
+        self.imp().cover.set_paintable(Some(tex));
+    }
+
+    fn clear_cover(&self) {
+        self.imp().cover.set_paintable(Some(&*ALBUMART_PLACEHOLDER));
     }
 
     pub fn current_playlist(&self) -> Option<INode> {

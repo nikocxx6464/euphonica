@@ -1,13 +1,11 @@
 use crate::{
-    cache::{sqlite, Cache},
-    client::{BackgroundTask, ClientState, MpdWrapper},
-    common::{Album, Artist, INode, Song, Stickers}, 
-    utils::settings_manager,
-    player::Player,
+    cache::{sqlite, Cache}, client::{BackgroundTask, ClientState, MpdWrapper, StickerSetMode}, common::{Album, Artist, DynamicPlaylist, INode, Song, Stickers}, player::Player, utils::settings_manager
 };
-use glib::{closure_local, subclass::Signal};
+use glib::{closure_local, subclass::Signal, clone};
 use gtk::{gio, glib, prelude::*};
 use std::{borrow::Cow, cell::OnceCell, rc::Rc, sync::OnceLock, vec::Vec};
+use derivative::Derivative;
+use chrono::Local;
 
 use adw::subclass::prelude::*;
 
@@ -21,9 +19,11 @@ mod imp {
 
     use super::*;
 
-    #[derive(Debug)]
+    #[derive(Debug, Derivative)]
+    #[derivative(Default)]
     pub struct Library {
         pub client: OnceCell<Rc<MpdWrapper>>,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub recent_songs: gio::ListStore,
         // Album/Artist retrieval routine:
         // 1. Library places a background task to fetch albums.
@@ -34,19 +34,28 @@ mod imp {
         // 4.3. Send AlbumInfo class to main thread via AsyncClientMessage.
         // 4.4. Wrapper tells Library controller to create an Album GObject with that AlbumInfo &
         // append to the list store.
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub playlists: gio::ListStore,
         pub playlists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
+        pub dyn_playlists: gio::ListStore,
+        pub dyn_playlists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub albums: gio::ListStore,
         pub albums_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub recent_albums: gio::ListStore,
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub artists: gio::ListStore,
         pub artists_initialized: Cell<bool>,
+        #[derivative(Default(value = "gio::ListStore::new::<Artist>()"))]
         pub recent_artists: gio::ListStore,
 
         // Folder view
         // Files and folders
         pub folder_history: RefCell<Vec<String>>,
         pub folder_curr_idx: Cell<u32>, // 0 means at root.
+        #[derivative(Default(value = "gio::ListStore::new::<INode>()"))]
         pub folder_inodes: gio::ListStore,
         pub folder_inodes_initialized: Cell<bool>,
 
@@ -60,25 +69,7 @@ mod imp {
         type Type = super::Library;
 
         fn new() -> Self {
-            Self {
-                recent_songs: gio::ListStore::new::<Song>(),
-                playlists: gio::ListStore::new::<INode>(),
-                playlists_initialized: Cell::new(false),
-                albums: gio::ListStore::new::<Album>(),
-                albums_initialized: Cell::new(false),
-                recent_albums: gio::ListStore::new::<Album>(),
-                artists: gio::ListStore::new::<Artist>(),
-                artists_initialized: Cell::new(false),
-                recent_artists: gio::ListStore::new::<Artist>(),
-                client: OnceCell::new(),
-                cache: OnceCell::new(),
-                player: OnceCell::new(),
-
-                folder_history: RefCell::new(Vec::new()),
-                folder_curr_idx: Cell::new(0),
-                folder_inodes: gio::ListStore::new::<INode>(),
-                folder_inodes_initialized: Cell::new(false),
-            }
+            Self::default()
         }
     }
 
@@ -142,8 +133,10 @@ impl Library {
             "album-basic-info-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, album: Album| {
                     this.imp().albums.append(&album);
                 }
@@ -154,8 +147,10 @@ impl Library {
             "recent-album-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, album: Album| {
                     this.imp().recent_albums.append(&album);
                 }
@@ -166,8 +161,10 @@ impl Library {
             "artist-basic-info-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, artist: Artist| {
                     this.imp().artists.append(&artist);
                 }
@@ -178,8 +175,10 @@ impl Library {
             "recent-artist-downloaded",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: ClientState, artist: Artist| {
                     this.imp().recent_artists.append(&artist);
                 }
@@ -230,6 +229,8 @@ impl Library {
         self.imp().recent_artists.remove_all();
         self.imp().playlists.remove_all();
         self.imp().playlists_initialized.set(false);
+        self.imp().dyn_playlists.remove_all();
+        self.imp().dyn_playlists_initialized.set(false);
         self.imp().folder_inodes.remove_all();
         let _ = self.imp().folder_history.replace(Vec::new());
         let _ = self.imp().folder_curr_idx.replace(0);
@@ -346,7 +347,7 @@ impl Library {
 
     pub fn rate_album(&self, album: &Album, score: Option<i8>) {
         if let Some(score) = score {
-            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string());
+            self.client().set_sticker("album", album.get_title(), Stickers::RATING_KEY, &score.to_string(), StickerSetMode::Set);
         }
         else {
             self.client().delete_sticker("album", album.get_title(), Stickers::RATING_KEY);
@@ -412,7 +413,7 @@ impl Library {
     pub fn folder_path(&self) -> String {
         let history = self.imp().folder_history.borrow();
         let curr_idx = self.imp().folder_curr_idx.get();
-        if history.len() > 0 && curr_idx > 0 {
+        if !history.is_empty() && curr_idx > 0 {
             history[..curr_idx as usize].join("/")
         } else {
             "".to_string()
@@ -476,14 +477,46 @@ impl Library {
         );
     }
 
-    /// Queue a playlist for playback.
-    pub fn init_playlists(&self) {
-        if !self.imp().playlists_initialized.get() {
+    /// Get all playlists
+    pub fn init_playlists(&self, refresh: bool) {
+        if refresh || !self.imp().playlists_initialized.get() {
             self.imp().playlists.remove_all();
             self.imp()
                 .playlists
                 .extend_from_slice(&self.client().get_playlists());
             self.imp().playlists_initialized.set(true);
+        }
+    }
+
+    /// Get all dynamic playlists
+    pub fn init_dyn_playlists(&self, refresh: bool) {
+        if !self.imp().dyn_playlists_initialized.get() || refresh {
+            self.imp().dyn_playlists.remove_all();
+            glib::spawn_future_local(clone!(
+                #[weak(rename_to = this)]
+                self,
+                async move {
+                    match gio::spawn_blocking(|| {
+                        sqlite::get_dynamic_playlists()
+                    }).await.unwrap() {
+                        Ok(inode_infos) => {
+                            println!("Received {} dynamic playlists", inode_infos.len());
+                            this.imp()
+                                .dyn_playlists
+                                .extend_from_slice(
+                                    &inode_infos
+                                    .into_iter()
+                                    .map(INode::from)
+                                    .collect::<Vec<INode>>()
+                                );
+                            this.imp().dyn_playlists_initialized.set(true);
+                        }
+                        Err(e) => {
+                            dbg!(e);
+                        }
+                    }
+                }
+            ));
         }
     }
 
@@ -500,6 +533,11 @@ impl Library {
     /// Get a reference to the local playlists store
     pub fn playlists(&self) -> gio::ListStore {
         self.imp().playlists.clone()
+    }
+
+    /// Get a reference to the local dynamic playlists store
+    pub fn dyn_playlists(&self) -> gio::ListStore {
+        self.imp().dyn_playlists.clone()
     }
 
     /// Get a reference to the local albums store
@@ -551,7 +589,9 @@ impl Library {
     }
 
     pub fn delete_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
-        self.client().delete_playlist(name)
+        self.client().delete_playlist(name)?;
+        self.init_playlists(true);
+        Ok(())
     }
 
     pub fn add_songs_to_playlist(
@@ -572,6 +612,77 @@ impl Library {
             ));
         });
         self.client().edit_playlist(&edits)
+    }
+
+    /// Retrieve songs in a dynamic playlist
+    pub fn fetch_dynamic_playlist(&self, dp: DynamicPlaylist, cache: bool) {
+        self.client().queue_background(
+            BackgroundTask::FetchDynamicPlaylistSongs(dp, cache), true
+        );
+    }
+
+    /// Retrieve last cached state of a dynamic playlist
+    pub fn fetch_cached_dynamic_playlist(&self, name: &str) {
+        self.client().queue_background(
+            BackgroundTask::FetchCachedDynamicPlaylistSongs(name.to_string()), true
+        );
+    }
+
+    /// Get last cached results of a dynamic playlist
+    pub fn queue_cached_dynamic_playlist(&self, name: &str, replace: bool, play: bool) {
+        if replace {
+            self.client().clear_queue();
+        }
+        self.client().queue_background(
+            BackgroundTask::QueueDynamicPlaylist(name.to_string(), play), true
+        );
+    }
+
+    /// Delete a dynamic playlist by name. Will also remove cover entries.
+    pub fn delete_dynamic_playlist(&self, name: &str) {
+        glib::spawn_future_local(clone!(
+            #[weak(rename_to = this)]
+           self,
+            async move {
+                match gio::spawn_blocking(|| {
+                    sqlite::get_dynamic_playlists()
+                }).await.unwrap() {
+                    Ok(inode_infos) => {
+                        println!("Received {} dynamic playlists", inode_infos.len());
+                        this.imp()
+                            .dyn_playlists
+                            .extend_from_slice(
+                                &inode_infos
+                                    .into_iter()
+                                    .map(INode::from)
+                                    .collect::<Vec<INode>>()
+                            );
+                        this.imp().dyn_playlists_initialized.set(true);
+                    }
+                    Err(e) => {
+                        dbg!(e);
+                    }
+                }
+            }
+        ));
+    }
+
+    pub fn save_dynamic_playlist_state(&self, dp_name: &str) -> Option<String> {
+        if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(dp_name) {
+            if !uris.is_empty() {
+                let fixed_name = format!("{} {}", dp_name, Local::now().format("%Y-%m-%d %H:%M:%S"));
+                self.client().edit_playlist(
+                    &uris.iter().map(
+                        |uri| EditAction::Add(Cow::Borrowed(&fixed_name), Cow::Borrowed(uri), None)
+                    ).collect::<Vec::<EditAction>>()
+                );
+                Some(fixed_name)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
     }
 
     pub fn get_folder_contents(&self) {
@@ -625,6 +736,14 @@ impl Library {
 
     pub fn clear_artist_avatar(&self, tag: &str) {
         self.cache().clear_artist_avatar(tag);
+    }
+
+    pub fn set_playlist_cover(&self, playlist_name: &str, path: &str) {
+        self.cache().set_playlist_cover(playlist_name, path);
+    }
+
+    pub fn clear_playlist_cover(&self, playlist_name: &str) {
+        self.cache().clear_playlist_cover(playlist_name);
     }
 
     pub fn fetch_recent_songs(&self) {

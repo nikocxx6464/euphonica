@@ -1,0 +1,138 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+  <template class="EuphonicaSongRow" parent="GtkBox">
+    <style>
+      <class name="padding-6"/>
+    </style>
+    <!-- We cannot use GtkBox's spacing here, as that'll pad both sides of playing_indicator
+    even when it's hidden, creating a 12px space instead of 6px.-->
+    <child>
+      <object class="GtkRevealer" id="playing_indicator">
+        <property name="transition-type">slide-right</property>
+        <property name="visible">false</property>
+        <property name="child">
+          <object class="GtkImage">
+            <property name="margin-end">6</property>
+            <property name="icon-name">play-symbolic</property>
+          </object>
+        </property>
+      </object>
+    </child>
+    <child>
+      <object class="GtkLabel" id="index">
+        <property name="margin-end">6</property>
+        <property name="label">NaN</property>
+        <property name="visible">false</property>
+        <style>
+          <class name="dim-label"/>
+        </style>
+      </object>
+    </child>
+    <child>
+      <object class="GtkBox">
+        <property name="halign">3</property>
+        <property name="valign">3</property>
+        <property name="overflow">hidden</property>
+        <property name="margin-end">6</property>
+        <style>
+          <class name="border-radius-6"/>
+        </style>
+        <child>
+          <object class="GtkImage" id="thumbnail">
+            <property name="pixel-size">36</property>
+            <property name="resource">io/github/htkhiem/Euphonica/albumart-placeholder-thumb.png</property>
+          </object>
+        </child>
+      </object>
+    </child>
+    <child>
+      <object class="GtkCenterBox" id="center_box">
+        <property name="hexpand">true</property>
+        <property name="start-widget">
+          <object class="GtkBox">
+            <property name="orientation">vertical</property>
+            <property name="spacing">6</property>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">6</property>
+                <child>
+                  <object class="EuphonicaMarquee" id="name">
+                    <property name="speed">20</property>
+                    <style>
+                      <class name="heading" />
+                    </style>
+                  </object>
+                </child>
+                <child>
+                  <object class="GtkImage" id="quality_grade">
+                    <property name="visible">false</property>
+                  </object>
+                </child>
+              </object>
+            </child>
+            <child>
+              <object class="GtkBox">
+                <property name="spacing">12</property>
+                <style>
+                  <class name="caption"/>
+                  <class name="dim-label"/>
+                </style>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="first_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="first_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="second_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="second_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+
+                <child>
+                  <object class="GtkBox">
+                    <property name="spacing">4</property>
+                    <child>
+                      <object class="GtkImage" id="third_attrib_icon">
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                    <child>
+                      <object class="GtkLabel" id="third_attrib_text">
+                        <property name="ellipsize">end</property>
+                        <property name="visible">false</property>
+                      </object>
+                    </child>
+                  </object>
+                </child>
+              </object>
+            </child>
+          </object>
+        </property>
+      </object>
+    </child>
+  </template>
+</interface>

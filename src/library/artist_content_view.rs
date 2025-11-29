@@ -1,34 +1,33 @@
 use duplicate::duplicate;
 use adw::subclass::prelude::*;
-use glib::{clone, closure_local, signal::SignalHandlerId, Binding};
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{clone, closure_local, signal::SignalHandlerId, Binding, subclass::Signal, WeakRef};
 use gtk::{gdk, gio, glib, prelude::*, CompositeTemplate, ListItem, SignalListItemFactory};
 use std::{
-    cell::{OnceCell, RefCell},
+    cell::{OnceCell, RefCell, Cell},
+    sync::OnceLock,
     rc::Rc,
 };
+use ashpd::desktop::file_chooser::SelectedFiles;
+use derivative::Derivative;
 
-use super::{AlbumCell, ArtistSongRow, Library};
+use super::{AlbumCell, Library};
 use crate::{
     cache::{placeholders::EMPTY_ARTIST_STRING, Cache, CacheState},
     client::ClientState,
-    common::{Album, Artist, Song}, utils::settings_manager,
+    library::add_to_playlist::AddToPlaylistButton,
+    common::{Album, Artist, RowAddButtons, Song, SongRow, ContentView}, utils::{format_secs_as_duration, settings_manager, tokio_runtime},
 };
 
 mod imp {
-    use std::{cell::Cell, sync::OnceLock};
-
-    use ashpd::desktop::file_chooser::SelectedFiles;
-    use async_channel::Sender;
-    use gio::{ActionEntry, SimpleActionGroup};
-    use glib::subclass::Signal;
-
-    use crate::{library::add_to_playlist::AddToPlaylistButton, utils};
-
     use super::*;
 
-    #[derive(Debug, CompositeTemplate)]
+    #[derive(Debug, CompositeTemplate, Derivative)]
+    #[derivative(Default)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-content-view.ui")]
     pub struct ArtistContentView {
+        #[template_child]
+        pub inner: TemplateChild<ContentView>,
         #[template_child]
         pub avatar: TemplateChild<adw::Avatar>,
         #[template_child]
@@ -39,11 +38,7 @@ mod imp {
         pub album_count: TemplateChild<gtk::Label>,
 
         #[template_child]
-        pub infobox_revealer: TemplateChild<gtk::Revealer>,
-        #[template_child]
         pub infobox_spinner: TemplateChild<gtk::Stack>,
-        #[template_child]
-        pub collapse_infobox: TemplateChild<gtk::ToggleButton>,
 
         #[template_child]
         pub bio_text: TemplateChild<gtk::Label>,
@@ -64,7 +59,9 @@ mod imp {
         pub song_spinner: TemplateChild<gtk::Stack>,
         #[template_child]
         pub song_subview: TemplateChild<gtk::ListView>,
+        #[derivative(Default(value = "gio::ListStore::new::<Song>()"))]
         pub song_list: gio::ListStore,
+        #[derivative(Default(value = "gtk::MultiSelection::new(Option::<gio::ListStore>::None)"))]
         pub song_sel_model: gtk::MultiSelection,
         #[template_child]
         pub replace_queue: TemplateChild<gtk::Button>,
@@ -86,58 +83,16 @@ mod imp {
         pub album_spinner: TemplateChild<gtk::Stack>,
         #[template_child]
         pub album_subview: TemplateChild<gtk::GridView>,
+        #[derivative(Default(value = "gio::ListStore::new::<Album>()"))]
         pub album_list: gio::ListStore,
 
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
         pub artist: RefCell<Option<Artist>>,
         pub bindings: RefCell<Vec<Binding>>,
         pub avatar_signal_id: RefCell<Option<SignalHandlerId>>,
         pub cache: OnceCell<Rc<Cache>>,
-        pub selecting_all: Cell<bool>, // Enables queuing all songs from this artist efficiently
-        pub filepath_sender: OnceCell<Sender<String>>
-    }
-
-    impl Default for ArtistContentView {
-        fn default() -> Self {
-            Self {
-                avatar: TemplateChild::default(),
-                name: TemplateChild::default(),
-                song_count: TemplateChild::default(),
-                album_count: TemplateChild::default(),
-                infobox_spinner: TemplateChild::default(),
-                infobox_revealer: TemplateChild::default(),
-                collapse_infobox: TemplateChild::default(),
-                bio_text: TemplateChild::default(),
-                bio_link: TemplateChild::default(),
-                bio_attrib: TemplateChild::default(),
-                // runtime: TemplateChild::default(),
-                all_songs_btn: TemplateChild::default(),
-                subview_stack: TemplateChild::default(),
-                // All songs sub-view
-                song_spinner: TemplateChild::default(),
-                song_subview: TemplateChild::default(),
-                song_list: gio::ListStore::new::<Song>(),
-                song_sel_model: gtk::MultiSelection::new(Option::<gio::ListStore>::None),
-                replace_queue: TemplateChild::default(),
-                append_queue: TemplateChild::default(),
-                replace_queue_text: TemplateChild::default(),
-                append_queue_text: TemplateChild::default(),
-                add_to_playlist: TemplateChild::default(),
-                sel_all: TemplateChild::default(),
-                sel_none: TemplateChild::default(),
-                // Discography sub-view
-                album_spinner: TemplateChild::default(),
-                album_subview: TemplateChild::default(),
-                album_list: gio::ListStore::new::<Album>(),
-                library: OnceCell::new(),
-                artist: RefCell::new(None),
-                bindings: RefCell::new(Vec::new()),
-                avatar_signal_id: RefCell::new(None),
-                cache: OnceCell::new(),
-                filepath_sender: OnceCell::new(),
-                selecting_all: Cell::new(true), // When nothing is selected, default to select-all
-            }
-        }
+        #[derivative(Default(value = "Cell::new(true)"))]
+        pub selecting_all: Cell<bool> // Enables queuing all songs from this artist efficiently
     }
 
     #[glib::object_subclass]
@@ -237,43 +192,61 @@ mod imp {
             let obj = self.obj();
             let action_set_avatar = ActionEntry::builder("set-avatar")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
-                        if let Some(sender) = obj.imp().filepath_sender.get() {
-                            let sender = sender.clone();
-                            utils::tokio_runtime().spawn(async move {
-                                let maybe_files = SelectedFiles::open_file()
-                                    .title("Select a new avatar")
-                                    .modal(true)
-                                    .multiple(false)
-                                    .send()
-                                    .await
-                                    .expect("ashpd file open await failure")
-                                    .response();
+                        let (sender, receiver) = async_channel::unbounded();
+                        tokio_runtime().spawn(async move {
+                            let maybe_files = SelectedFiles::open_file()
+                                .title("Select a new avatar")
+                                .modal(true)
+                                .multiple(false)
+                                .send()
+                                .await
+                                .expect("ashpd file open await failure")
+                                .response();
 
-                                if let Ok(files) = maybe_files {
-                                    let uris = files.uris();
-                                    if uris.len() > 0 {
-                                        let _ = sender.send_blocking(uris[0].to_string());
-                                    }
+                            if let Ok(files) = maybe_files {
+                                let uris = files.uris();
+                                if !uris.is_empty() {
+                                    let _ = sender.send_blocking(uris[0].to_string());
                                 }
-                                else {
-                                    println!("{:?}", maybe_files);
+                            }
+                            else {
+                                println!("{maybe_files:?}");
+                            }
+                        });
+                        glib::MainContext::default().spawn_local(clone!(
+                            #[weak]
+                            obj,
+                            #[upgrade_or]
+                            (),
+                            async move {
+                                use futures::prelude::*;
+                                // Allow receiver to be mutated, but keep it at the same memory address.
+                                // See Receiver::next doc for why this is needed.
+                                let mut receiver = std::pin::pin!(receiver);
+
+                                if let Some(tag) = receiver.next().await {
+                                    obj.set_avatar(&tag);
                                 }
-                            });
-                        }
+                            }
+                        ));
                     }
                 ))
                 .build();
             let action_clear_avatar = ActionEntry::builder("clear-avatar")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             library.clear_artist_avatar(artist.get_name());
                         }
@@ -283,19 +256,22 @@ mod imp {
 
             let action_refetch_metadata = ActionEntry::builder("refetch-metadata")
                 .activate(clone!(
-                    #[strong]
+                    #[weak]
                     obj,
+                    #[upgrade_or]
+                    (),
                     move |_, _, _| {
                         if let (Some(artist), Some(library)) = (
                             obj.imp().artist.borrow().as_ref(),
-                            obj.imp().library.get()
+                            obj.imp().library.upgrade()
                         ) {
                             let spinner = obj.imp().infobox_spinner.get();
                             if spinner.visible_child_name().unwrap() != "spinner" {
                                 spinner.set_visible_child_name("spinner");
                             }
+                            spinner.set_visible(true);
                             library.clear_artist_avatar(artist.get_name());
-                            library.refetch_artist_metadata(&artist);
+                            library.refetch_artist_metadata(artist);
                         }
                     }
                 ))
@@ -336,9 +312,9 @@ mod imp {
                 // TODO: l10n
                 self.selecting_all.replace(false);
                 self.replace_queue_text
-                    .set_label(format!("Play {}", n_sel).as_str());
+                    .set_label(format!("Play {n_sel}").as_str());
                 self.append_queue_text
-                    .set_label(format!("Queue {}", n_sel).as_str());
+                    .set_label(format!("Queue {n_sel}").as_str());
             }
         }
     }
@@ -361,30 +337,38 @@ impl ArtistContentView {
         let stack = self.imp().infobox_spinner.get();
         // If the current album is the "untitled" one (i.e. for songs without an album tag),
         // don't attempt to update metadata.
-        let cache = self.imp().cache.get().unwrap().clone();
         if artist.get_name().is_empty() {
-            if stack.visible_child_name().unwrap() != "content" {
-                stack.set_visible_child_name("content");
-            }
+            stack.set_visible(false);
         } else {
+            let cache = self.imp().cache.get().unwrap().clone();
             let bio_text = self.imp().bio_text.get();
             let bio_link = self.imp().bio_link.get();
             let bio_attrib = self.imp().bio_attrib.get();
             if let Some(meta) = cache.load_cached_artist_meta(artist.get_info()) {
                 if let Some(bio) = meta.bio {
+                    stack.set_visible(true);
+                    bio_text.set_visible(true);
                     bio_text.set_label(&bio.content);
                     if let Some(url) = bio.url.as_ref() {
                         bio_link.set_visible(true);
                         bio_link.set_uri(url);
                     } else {
                         bio_link.set_visible(false);
+                        bio_link.set_uri("");
                     }
+                    bio_attrib.set_visible(true);
                     bio_attrib.set_label(&bio.attribution);
+                    if stack.visible_child_name().unwrap() != "content" {
+                        stack.set_visible_child_name("content");
+                    }
                 } else {
+                    stack.set_visible(false);
+                    bio_text.set_visible(false);
                     bio_text.set_label("");
-                }
-                if stack.visible_child_name().unwrap() != "content" {
-                    stack.set_visible_child_name("content");
+                    bio_attrib.set_visible(false);
+                    bio_attrib.set_label("");
+                    bio_link.set_visible(false);
+                    bio_link.set_uri("");
                 }
             }
         }
@@ -441,27 +425,6 @@ impl ArtistContentView {
                 }
             ),
         );
-
-        let infobox_revealer = self.imp().infobox_revealer.get();
-        let collapse_infobox = self.imp().collapse_infobox.get();
-        collapse_infobox
-            .bind_property("active", &infobox_revealer, "reveal-child")
-            .transform_to(|_, active: bool| Some(!active))
-            .transform_from(|_, active: bool| Some(!active))
-            .bidirectional()
-            .sync_create()
-            .build();
-
-        infobox_revealer
-            .bind_property("child-revealed", &collapse_infobox, "icon-name")
-            .transform_to(|_, revealed| {
-                if revealed {
-                    return Some("up-symbolic");
-                }
-                Some("down-symbolic")
-            })
-            .sync_create()
-            .build();
     }
 
     fn setup_song_subview(&self, client_state: ClientState) {
@@ -473,11 +436,13 @@ impl ArtistContentView {
             .sync_create()
             .build();
         replace_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, true, true);
                     } else {
@@ -502,11 +467,13 @@ impl ArtistContentView {
             .sync_create()
             .build();
         append_queue_btn.connect_clicked(clone!(
-            #[strong(rename_to = this)]
+            #[weak(rename_to = this)]
             self,
+            #[upgrade_or]
+            (),
             move |_| {
                 if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                    let library = this.imp().library.get().unwrap();
+                    let library = this.imp().library.upgrade().unwrap();
                     if this.imp().selecting_all.get() {
                         library.queue_artist(artist.clone(), false, false, false);
                     } else {
@@ -542,10 +509,10 @@ impl ArtistContentView {
         );
 
         // Set up factory
-        let library = self.imp().library.get().unwrap();
+        let library = self.imp().library.upgrade().unwrap();
         let cache = self.imp().cache.get().unwrap();
         let factory = SignalListItemFactory::new();
-        // Create an empty `ArtistSongRow` during setup
+
         factory.connect_setup(clone!(
             #[weak]
             library,
@@ -555,11 +522,32 @@ impl ArtistContentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let song_row = ArtistSongRow::new(library, &item, cache);
-                item.set_child(Some(&song_row));
+                let row = SongRow::new(Some(cache), None);
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+
+                row.set_second_attrib_icon_name(Some("hourglass-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("duration")
+                    .chain_closure::<String>(closure_local!(|_: Option<glib::Object>, dur: u64| {
+                        format_secs_as_duration(dur as f64)
+                    }))
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowAddButtons::new(&library);
+                row.set_end_widget(Some(&end_widget.into()));
+                item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `ArtistSongRow` to one of our Artist GObjects
         factory.connect_bind(move |_, list_item| {
             // Get `Song` from `ListItem` (that is, the data side)
             let item: Song = list_item
@@ -569,35 +557,36 @@ impl ArtistContentView {
                 .and_downcast::<Song>()
                 .expect("The item has to be a common::Song.");
 
-            // Get `ArtistSongRow` from `ListItem` (the UI widget)
-            let child: ArtistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<ArtistSongRow>()
-                .expect("The child has to be an `ArtistSongRow`.");
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
 
-            // Within this binding fn is where the cached artist avatar texture gets used.
-            child.bind(&item);
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(Some(&item));
+            child.on_bind(&item);
         });
 
         // When row goes out of sight, unbind from item to allow reuse with another.
         factory.connect_unbind(move |_, list_item| {
-            // Get `ArtistSongRow` from `ListItem` (the UI widget)
-            let child: ArtistSongRow = list_item
+            // Get `SongRow` from `ListItem` (the UI widget)
+            let child: SongRow = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<ArtistSongRow>()
-                .expect("The child has to be an `ArtistSongRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
+            child.end_widget().and_downcast::<RowAddButtons>().unwrap().set_song(None);
+            child.on_unbind();
         });
 
         // Set the factory of the list view
         self.imp().song_subview.set_factory(Some(&factory));
     }
 
-    fn setup_album_subview(&self, client_state: ClientState) {
+    fn setup_album_subview(&self, client_state: &ClientState) {
         let settings = settings_manager().child("ui");
         // Unlike songs, we receive albums one by one.
         client_state.connect_closure(
@@ -627,7 +616,7 @@ impl ArtistContentView {
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
                 // TODO: refactor album cells to use expressions too
-                let album_cell = AlbumCell::new(&item, cache, None);
+                let album_cell = AlbumCell::new(item, cache, None);
                 item.set_child(Some(&album_cell));
             }
         ));
@@ -671,27 +660,9 @@ impl ArtistContentView {
             .build();
     }
 
-    pub fn setup(&self, library: Library, cache: Rc<Cache>, client_state: ClientState) {
+    pub fn setup(&self, library: &Library, cache: Rc<Cache>, client_state: &ClientState) {
         self.imp().cache.set(cache).expect("Could not register artist content view with cache controller");
-        self.imp().library.set(library.clone()).expect("Could not register album content view with library controller");
-        // Set up channel for listening to album art dialog
-        // It is in these situations that Rust's lack of a standard async library bites hard.
-        let (sender, receiver) = async_channel::unbounded::<String>();
-        let _ = self.imp().filepath_sender.set(sender);
-        glib::MainContext::default().spawn_local(clone!(
-            #[strong(rename_to = this)]
-            self,
-            async move {
-                use futures::prelude::*;
-                // Allow receiver to be mutated, but keep it at the same memory address.
-                // See Receiver::next doc for why this is needed.
-                let mut receiver = std::pin::pin!(receiver);
-
-                while let Some(tag) = receiver.next().await {
-                    this.set_avatar(&tag);
-                }
-            }
-        ));
+        self.imp().library.set(Some(library));
 
         self.setup_info_box();
         self.setup_song_subview(client_state.clone());
@@ -699,14 +670,14 @@ impl ArtistContentView {
 
         self.imp()
             .add_to_playlist
-            .setup(library, self.imp().song_sel_model.clone());
+            .setup(library, &self.imp().song_sel_model);
     }
 
     /// Set a user-selected path as the new local avatar.
     pub fn set_avatar(&self, path: &str) {
         if let (Some(artist), Some(library)) = (
             self.imp().artist.borrow().as_ref(),
-            self.imp().library.get()
+            self.imp().library.upgrade()
         ) {
             library.set_artist_avatar(artist.get_name(), path); 
         }
@@ -772,6 +743,7 @@ impl ArtistContentView {
                 self.imp().stack.set_visible_child_name("spinner");
             }
         }
+        self.imp().infobox_spinner.set_visible(true);
     }
 
     fn add_album(&self, album: Album) {

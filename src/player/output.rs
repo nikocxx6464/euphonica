@@ -1,4 +1,4 @@
-use glib::{Object, Properties};
+use glib::Object;
 use gtk::{
     glib::{self, clone},
     prelude::*,
@@ -6,7 +6,6 @@ use gtk::{
     CompositeTemplate,
 };
 use mpd::output::Output;
-use std::cell::Cell;
 
 use super::Player;
 
@@ -97,11 +96,11 @@ impl MpdOutput {
             enable_output.set_active(output.enabled);
         }
         icon.set_icon_name(Some(map_icon_name(&output.plugin)));
-        if output.attributes.len() > 0 {
+        if !output.attributes.is_empty() {
             // Big TODO: editable runtime attributes
             let mut attribs: Vec<String> = Vec::with_capacity(output.attributes.len());
             for (k, v) in output.attributes.iter() {
-                attribs.push(format!("<b>{}</b>: {}", k, v));
+                attribs.push(format!("<b>{k}</b>: {v}"));
             }
 
             options_preview.set_visible(true);

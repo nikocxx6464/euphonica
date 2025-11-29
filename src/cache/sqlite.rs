@@ -1,18 +1,18 @@
 extern crate bson;
 extern crate rusqlite;
 
-use std::io::Cursor;
+use std::{io::Cursor, str::FromStr};
 
 use once_cell::sync::Lazy;
 use r2d2_sqlite::SqliteConnectionManager;
-use rusqlite::{params, Error as SqliteError, Result, Row};
+use rusqlite::{params, Error as SqliteError, OptionalExtension, Result, Row};
 use time::OffsetDateTime;
 use glib::{ThreadPool, ThreadHandle};
 
 use crate::{
-    common::{AlbumInfo, ArtistInfo, SongInfo},
+    common::{dynamic_playlist::{AutoRefresh, Ordering, Rule}, inode::INodeInfo, AlbumInfo, ArtistInfo, DynamicPlaylist, INodeType, SongInfo},
     meta_providers::models::{AlbumMeta, ArtistMeta, Lyrics, LyricsParseError},
-    utils::strip_filename_linux,
+    utils::{format_datetime_local_tz, strip_filename_linux},
 };
 
 use super::controller::get_doc_cache_path;
@@ -37,7 +37,34 @@ static SQLITE_POOL: Lazy<r2d2::Pool<SqliteConnectionManager>> = Lazy::new(|| {
 
         println!("Local metadata DB version: {user_version}");
         match user_version {
-            3 => {break;},
+            4 => {break;},
+            3 => {
+                conn.execute_batch("create table if not exists `queries` (
+    `name` VARCHAR not null,
+    `cover_name` VARCHAR null,
+    `last_modified` DATETIME not null,
+    `last_queued` DATETIME null,
+    `play_count` INTEGER not null,
+    `bson` BLOB not null,
+    `last_refresh` DATETIME null,
+    `auto_refresh` VARCHAR not null,
+    `limit` INTEGER null,
+    primary key(`name`)
+);
+create unique index if not exists `query_key` on `queries` (
+    `name`
+);
+
+create table if not exists `query_results` (
+    `query_name` VARCHAR not null,
+    `uri` VARCHAR not null
+);
+create index if not exists `query_results_key` on `query_results` (
+    `query_name`
+);
+
+pragma user_version = 4;").expect("Unable to migrate DB version 3 to 4");
+            },
             2 => {
                 conn.execute_batch("alter table albums_history add column mbid varchar null;
 alter table albums_history add column artist varchar null;
@@ -207,13 +234,38 @@ create unique index if not exists `image_key` on `images` (
     `is_thumbnail`
 );
 
+create table if not exists `queries` (
+    `name` VARCHAR not null,
+    `cover_name` VARCHAR null,
+    `last_modified` DATETIME not null,
+    `last_queued` DATETIME null,
+    `play_count` INTEGER not null,
+    `bson` BLOB not null,
+    `last_refresh` DATETIME null,
+    `auto_refresh` VARCHAR not null,
+    `limit` INTEGER null,
+    primary key(`name`)
+);
+create unique index if not exists `query_key` on `queries` (
+    `name`
+);
+
+create table if not exists `query_results` (
+    `query_name` VARCHAR not null,
+    `uri` VARCHAR not null
+);
+create index if not exists `query_results_key` on `query_results` (
+    `query_name`
+);
+
 pragma journal_mode=WAL;
-pragma user_version = 3;
+pragma user_version = 4;
 end;
 ").expect("Unable to init metadata SQLite DB");
                     }
                     e => {panic!("SQLite database error: {e:?}");}
                 }
+
             }
             _ => {}
         }
@@ -225,11 +277,18 @@ end;
 #[derive(Debug)]
 pub enum Error {
     BytesToDocError,
-    DocToMetaError,
-    MetaToDocError,
-    DocToBytesError,
+    DocToObjectError,
+    ObjectToDocError(bson::error::Error),
+    DocToBytesError(bson::error::Error),
     DbError(SqliteError),
     InsufficientKey,
+    KeyAlreadyExists
+}
+
+impl From<SqliteError> for Error {
+    fn from(value: rusqlite::Error) -> Self {
+        Self::DbError(value)
+    }
 }
 
 pub struct AlbumMetaRow {
@@ -245,10 +304,11 @@ impl TryInto<AlbumMeta> for AlbumMetaRow {
     type Error = Error;
     fn try_into(self) -> Result<AlbumMeta, Self::Error> {
         let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-        .map_err(|_| Error::DocToMetaError)
+        bson::deserialize_from_document(
+            bson::Document
+                ::from_reader(&mut reader)
+                .map_err(|_| Error::BytesToDocError)?
+        ).map_err(|_| Error::DocToObjectError)
     }
 }
 
@@ -277,10 +337,11 @@ impl TryInto<ArtistMeta> for ArtistMetaRow {
     type Error = Error;
     fn try_into(self) -> Result<ArtistMeta, Self::Error> {
         let mut reader = Cursor::new(self.data);
-        bson::from_document(
-            bson::Document::from_reader(&mut reader).map_err(|_| Error::BytesToDocError)?,
-        )
-        .map_err(|_| Error::DocToMetaError)
+        bson::deserialize_from_document(
+            bson::Document
+                ::from_reader(&mut reader)
+                .map_err(|_| Error::BytesToDocError)?
+        ).map_err(|_| Error::DocToObjectError)
     }
 }
 
@@ -345,13 +406,13 @@ pub fn find_album_meta(album: &AlbumInfo) -> Result<Option<AlbumMeta>, Error> {
     match query {
         Ok(row) => {
             let res = row.try_into()?;
-            return Ok(Some(res));
+            Ok(Some(res))
         }
         Err(SqliteError::QueryReturnedNoRows) => {
-            return Ok(None);
+            Ok(None)
         }
         Err(e) => {
-            return Err(Error::DbError(e));
+            Err(Error::DbError(e))
         }
     }
 }
@@ -373,31 +434,31 @@ pub fn find_artist_meta(artist: &ArtistInfo) -> Result<Option<ArtistMeta>, Error
     match query {
         Ok(row) => {
             let res = row.try_into()?;
-            return Ok(Some(res));
+            Ok(Some(res))
         }
         Err(SqliteError::QueryReturnedNoRows) => {
-            return Ok(None);
+            Ok(None)
         }
         Err(e) => {
-            return Err(Error::DbError(e));
+            Err(Error::DbError(e))
         }
     }
 }
 
 pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let tx = conn.transaction().map_err(Error::DbError)?;
     if let Some(mbid) = album.mbid.as_deref() {
         tx.execute("delete from albums where mbid = ?1", params![mbid])
-            .map_err(|e| Error::DbError(e))?;
+            .map_err(Error::DbError)?;
     } else if let (title, Some(artist)) = (&album.title, album.get_artist_tag()) {
         tx.execute(
             "delete from albums where title = ?1 and artist = ?2",
             params![title, artist],
         )
-        .map_err(|e| Error::DbError(e))?;
+        .map_err(Error::DbError)?;
     } else {
-        tx.rollback().map_err(|e| Error::DbError(e))?;
+        tx.rollback().map_err(Error::DbError)?;
         return Err(Error::InsufficientKey);
     }
     tx.execute(
@@ -408,22 +469,26 @@ pub fn write_album_meta(album: &AlbumInfo, meta: &AlbumMeta) -> Result<(), Error
             &album.title,
             &album.get_artist_tag(),
             OffsetDateTime::now_utc(),
-            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?).map_err(|_| Error::DocToBytesError)?
+            bson::serialize_to_vec(
+                &bson
+                    ::serialize_to_document(meta)
+                    .map_err(Error::ObjectToDocError)?
+            ).map_err(Error::DocToBytesError)?
         ]
-    ).map_err(|e| Error::DbError(e))?;
-    tx.commit().map_err(|e| Error::DbError(e))?;
+    ).map_err(Error::DbError)?;
+    tx.commit().map_err(Error::DbError)?;
     Ok(())
 }
 
 pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let tx = conn.transaction().map_err(Error::DbError)?;
     if let Some(mbid) = artist.mbid.as_deref() {
         tx.execute("delete from artists where mbid = ?1", params![mbid])
-            .map_err(|e| Error::DbError(e))?;
+            .map_err(Error::DbError)?;
     } else {
         tx.execute("delete from artists where name = ?1", params![&artist.name])
-            .map_err(|e| Error::DbError(e))?;
+            .map_err(Error::DbError)?;
     }
     tx.execute(
         "insert into artists (name, mbid, last_modified, data) values (?1,?2,?3,?4)",
@@ -431,12 +496,13 @@ pub fn write_artist_meta(artist: &ArtistInfo, meta: &ArtistMeta) -> Result<(), E
             &artist.name,
             &artist.mbid,
             OffsetDateTime::now_utc(),
-            bson::to_vec(&bson::to_document(meta).map_err(|_| Error::MetaToDocError)?)
-                .map_err(|_| Error::DocToBytesError)?
+            bson::serialize_to_vec(
+                &bson::serialize_to_document(meta).map_err(Error::ObjectToDocError)?
+            ).map_err(Error::DocToBytesError)?
         ],
     )
-    .map_err(|e| Error::DbError(e))?;
-    tx.commit().map_err(|e| Error::DbError(e))?;
+    .map_err(Error::DbError)?;
+    tx.commit().map_err(Error::DbError)?;
     Ok(())
 }
 
@@ -449,28 +515,28 @@ pub fn find_lyrics(song: &SongInfo) -> Result<Option<Lyrics>, Error> {
         .query_row(params![&song.uri], |r| LyricsRow::try_from(r));
     match query {
         Ok(row) => {
-            if row.lyrics.len() > 0 {
-                let res = row.try_into().map_err(|_| Error::DocToMetaError)?;
-                return Ok(Some(res));
+            if !row.lyrics.is_empty() {
+                let res = row.try_into().map_err(|_| Error::DocToObjectError)?;
+                Ok(Some(res))
             }
             else {
-                return Ok(None);
+                Ok(None)
             }
         }
         Err(SqliteError::QueryReturnedNoRows) => {
-            return Ok(None);
+            Ok(None)
         }
         Err(e) => {
-            return Err(Error::DbError(e));
+            Err(Error::DbError(e))
         }
     }
 }
 
 pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let tx = conn.transaction().map_err(Error::DbError)?;
     tx.execute("delete from songs where uri = ?1", params![&song.uri])
-        .map_err(|e| Error::DbError(e))?;
+        .map_err(Error::DbError)?;
     if let Some(lyrics) = lyrics {
         tx.execute(
             "insert into songs (uri, lyrics, synced, last_modified) values (?1,?2,?3,?4)",
@@ -481,7 +547,7 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
                 OffsetDateTime::now_utc()
             ],
         )
-          .map_err(|e| Error::DbError(e))?;
+          .map_err(Error::DbError)?;
     }
     else {
         tx.execute(
@@ -493,13 +559,13 @@ pub fn write_lyrics(song: &SongInfo, lyrics: Option<&Lyrics>) -> Result<(), Erro
                 OffsetDateTime::now_utc()
             ],
         )
-          .map_err(|e| Error::DbError(e))?;
+          .map_err(Error::DbError)?;
     }
-    tx.commit().map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(Error::DbError)?;
     Ok(())
 }
 
-fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Result<Option<String>, Error> {
+pub fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Result<Option<String>, Error> {
     let query: Result<String, SqliteError>;
     let conn = SQLITE_POOL.get().unwrap();
     let final_key = if let Some(prefix) = prefix {
@@ -511,27 +577,19 @@ fn find_image_by_key(key: &str, prefix: Option<&str>, is_thumbnail: bool) -> Res
         .prepare("select filename from images where key = ?1 and is_thumbnail = ?2")
         .unwrap()
         .query_row(params![final_key, is_thumbnail as i32], |r| {
-            Ok(r.get::<usize, String>(0)?)
+            r.get::<usize, String>(0)
         });
     match query {
         Ok(filename) => {
-            return Ok(Some(filename));
+            Ok(Some(filename))
         }
         Err(SqliteError::QueryReturnedNoRows) => {
-            return Ok(None);
+            Ok(None)
         }
         Err(e) => {
-            return Err(Error::DbError(e));
+            Err(Error::DbError(e))
         }
     }
-}
-
-pub fn find_cover_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
-    find_image_by_key(key, None, is_thumbnail)
-}
-
-pub fn find_avatar_by_key(key: &str, is_thumbnail: bool) -> Result<Option<String>, Error> {
-    find_image_by_key(key, Some("avatar"), is_thumbnail)
 }
 
 /// Convenience wrapper for looking up covers. Automatically falls back to folder-level cover if possible.
@@ -548,7 +606,7 @@ pub fn find_cover_by_uri(track_uri: &str, is_thumbnail: bool) -> Result<Option<S
     }
 }
 
-fn register_image_key(
+pub fn register_image_key(
     key: String,
     prefix: Option<&'static str>,
     filename: Option<String>,
@@ -556,17 +614,20 @@ fn register_image_key(
 ) -> ThreadHandle<Result<(), Error>> {
     SQLITE_WRITE_THREADPOOL.push(move || {
         let mut conn = SQLITE_POOL.get().unwrap();
-        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-        tx.execute(
-            "delete from images where key = ?1 and is_thumbnail = ?2",
-            params![key, is_thumbnail as i32],
-        )
-          .map_err(|e| Error::DbError(e))?;
+        let tx = conn.transaction().map_err(Error::DbError)?;
+
         let final_key = if let Some(prefix) = prefix {
             &format!("{prefix}:{key}")
         } else {
             &key
         };
+
+        tx.execute(
+            "delete from images where key = ?1 and is_thumbnail = ?2",
+            params![final_key, is_thumbnail as i32],
+        )
+          .map_err(Error::DbError)?;
+
         tx.execute(
             "insert into images (key, is_thumbnail, filename, last_modified) values (?1,?2,?3,?4)",
             params![
@@ -581,40 +642,20 @@ fn register_image_key(
                 OffsetDateTime::now_utc()
             ],
         )
-          .map_err(|e| Error::DbError(e))?;
-        tx.commit().map_err(|e| Error::DbError(e))?;
+          .map_err(Error::DbError)?;
+        tx.commit().map_err(Error::DbError)?;
         Ok(())
     }).expect("register_image_key: Failed to schedule transaction with threadpool")
 }
 
-pub fn register_cover_key(
-    key: &str,
-    filename: Option<&str>,
-    is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    register_image_key(
-        key.to_owned(), None, filename.map(str::to_owned), is_thumbnail
-    )
-}
-
-pub fn register_avatar_key(
-    key: &str,
-    filename: Option<&str>,
-    is_thumbnail: bool,
-) -> ThreadHandle<Result<(), Error>> {
-    register_image_key(
-        key.to_owned(), Some("avatar"), filename.map(str::to_owned), is_thumbnail
-    )
-}
-
-fn unregister_image_key(
+pub fn unregister_image_key(
     key: String,
     prefix: Option<&'static str>,
     is_thumbnail: bool
 ) -> ThreadHandle<Result<(), Error>> {
     SQLITE_WRITE_THREADPOOL.push(move || {
         let mut conn = SQLITE_POOL.get().unwrap();
-        let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+        let tx = conn.transaction().map_err(Error::DbError)?;
         let final_key = if let Some(prefix) = prefix {
             &format!("{prefix}:{key}")
         } else {
@@ -624,44 +665,36 @@ fn unregister_image_key(
             "delete from images where key = ?1 and is_thumbnail = ?2",
             params![final_key, is_thumbnail as i32],
         )
-          .map_err(|e| Error::DbError(e))?;
-        tx.commit().map_err(|e| Error::DbError(e))?;
+          .map_err(Error::DbError)?;
+        tx.commit().map_err(Error::DbError)?;
         Ok(())
     }).expect("register_image_key: Failed to schedule transaction with threadpool")
 }
 
-pub fn unregister_cover_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
-    unregister_image_key(key.to_owned(), None, is_thumbnail)
-}
-
-pub fn unregister_avatar_key(key: &str, is_thumbnail: bool) -> ThreadHandle<Result<(), Error>> {
-    unregister_image_key(key.to_owned(), Some("avatar"), is_thumbnail)
-}
-
 pub fn add_to_history(song: &SongInfo) -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
+    let tx = conn.transaction().map_err(Error::DbError)?;
     let ts = OffsetDateTime::now_utc();
     tx.execute(
         "insert into songs_history (uri, timestamp) values (?1, ?2)",
         params![&song.uri, &ts],
     )
-    .map_err(|e| Error::DbError(e))?;
+    .map_err(Error::DbError)?;
     if let Some(album) = song.album.as_ref() {
         tx.execute(
             "insert into albums_history (title, mbid, artist, timestamp) values (?1, ?2, ?3, ?4)",
             params![&album.title, album.mbid.as_ref(), album.albumartist.as_ref(), &ts],
         )
-        .map_err(|e| Error::DbError(e))?;
+        .map_err(Error::DbError)?;
     }
     for artist in song.artists.iter() {
         tx.execute(
             "insert into artists_history(name, timestamp) values (?1, ?2)",
             params![&artist.name, &ts],
         )
-        .map_err(|e| Error::DbError(e))?;
+        .map_err(Error::DbError)?;
     }
-    tx.commit().map_err(|e| Error::DbError(e))?;
+    tx.commit().map_err(Error::DbError)?;
     Ok(())
 }
 
@@ -678,10 +711,10 @@ group by uri order by last_played desc limit ?1",
         .unwrap();
     let res = query
         .query_map(params![n], |r| Ok((r.get::<usize, String>(0)?, r.get::<usize, OffsetDateTime>(1)?)))
-        .map_err(|e| Error::DbError(e))?
+        .map_err(Error::DbError)?
         .map(|r| r.unwrap());
 
-    return Ok(res.collect());
+    Ok(res.collect())
 }
 
 /// Get (title, artist, mbid)s of up to N last listened to albums.
@@ -701,10 +734,10 @@ group by title order by last_played desc limit ?1",
             r.get::<usize, Option<String>>(1)?,
             r.get::<usize, Option<String>>(2)?)
         ))
-        .map_err(|e| Error::DbError(e))?
+        .map_err(Error::DbError)?
         .map(|r| r.unwrap());
 
-    return Ok(res.collect());
+    Ok(res.collect())
 }
 
 /// Get names of up to N last listened to artists.
@@ -719,19 +752,228 @@ group by name order by last_played desc limit ?1",
         )
         .unwrap();
     let res = query
-        .query_map(params![n], |r| Ok(r.get::<usize, String>(0)?))
-        .map_err(|e| Error::DbError(e))?
+        .query_map(params![n], |r| r.get::<usize, String>(0))
+        .map_err(Error::DbError)?
         .map(|r| r.unwrap());
 
-    return Ok(res.collect());
+    Ok(res.collect())
 }
 
 pub fn clear_history() -> Result<(), Error> {
     let mut conn = SQLITE_POOL.get().unwrap();
-    let tx = conn.transaction().map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from songs_history", []).map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from albums_history", []).map_err(|e| Error::DbError(e))?;
-    tx.execute("delete from artists_history", []).map_err(|e| Error::DbError(e))?;
-    tx.commit().map_err(|e| Error::DbError(e))?;
+    let tx = conn.transaction().map_err(Error::DbError)?;
+    tx.execute("delete from songs_history", []).map_err(Error::DbError)?;
+    tx.execute("delete from albums_history", []).map_err(Error::DbError)?;
+    tx.execute("delete from artists_history", []).map_err(Error::DbError)?;
+    tx.commit().map_err(Error::DbError)?;
+    Ok(())
+}
+
+/// Get basic information of each of the dynamic playlists. This returns INodeInfos as
+/// lightweight "previews" of full DynamicPlaylist objects.
+pub fn get_dynamic_playlists() -> Result<Vec<INodeInfo>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select name, last_modified from queries")
+        .unwrap();
+    Ok(
+        query
+            .query_map([], |r| {
+                Ok(INodeInfo {
+                    uri: r.get::<usize, String>(0)?,
+                    last_modified: Some(format_datetime_local_tz(r.get::<usize, OffsetDateTime>(1)?)),
+                    inode_type: INodeType::Playlist
+                })
+            })
+            .map_err(Error::DbError)?
+            .map(|r| r.unwrap())
+            .collect::<Vec<INodeInfo>>()
+    )
+}
+
+pub fn exists_dynamic_playlist(name: &str) -> Result<bool, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select count(name) from queries where name = ?1")
+        .unwrap();
+    match query
+        .query_one(params![name], |r| r.get::<usize, usize>(0)) {
+            Ok(count) => Ok(count > 0),
+            Err(SqliteError::QueryReturnedNoRows) => Ok(false),
+            Err(e) => Err(Error::DbError(e))
+        }
+}
+
+pub fn insert_dynamic_playlist(dp: &DynamicPlaylist, overwrite_name: Option<&str>) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction()?;
+
+    if let Some(to_overwrite) = overwrite_name {
+        // This allows us to both edit and rename an existing DP in one call
+        tx
+            .execute("delete from queries where name = ?1", params![&to_overwrite])
+            .map_err(Error::DbError)?;
+
+        // Migrate image cache entry (if one exists) to new name
+        if to_overwrite != dp.name {
+            if let Err(db_err) = tx
+                .execute("update images set key = ?1 where key = ?2", params![
+                    &format!("dynamic_playlist:{to_overwrite}"),
+                    &format!("dynamic_playlist:{}", dp.name),
+                ]) {
+                    tx.rollback().map_err(Error::DbError)?;
+                    return Err(Error::DbError(db_err));
+                }
+        }
+    }
+
+    // Bail out if current name already exists. The overwriting case should have already
+    // removed the existing option in the above logic.
+    // We can't use exists_dynamic_playlist() here as the check has to be part of this
+    // transaction.
+    let count_res = tx.query_one(
+        "select count(name) from queries where name = ?1",
+        params![&dp.name], |r| r.get::<usize, usize>(0)
+    );
+    match count_res {
+        Ok(count) => {
+            if count > 0 {
+                tx.rollback().map_err(Error::DbError)?;
+                return Err(Error::KeyAlreadyExists);
+            }
+        }
+        Err(SqliteError::QueryReturnedNoRows) => {}
+        Err(e) => { return Err(Error::DbError(e));}
+    }
+
+    let last_queued = dp
+        .last_queued
+        .and_then(|secs| {OffsetDateTime::from_unix_timestamp(secs).ok()});
+
+    let last_refresh = dp
+        .last_refresh
+        .and_then(|secs| {OffsetDateTime::from_unix_timestamp(secs).ok()});
+
+    tx.execute(
+        "insert into queries
+(name, last_modified, last_queued, play_count, bson, auto_refresh, last_refresh, `limit`)
+values (?1,?2,?3,?4,?5,?6,?7,?8)",
+        params![
+            &dp.name,
+            OffsetDateTime::now_utc(),
+            last_queued,
+            &dp.play_count,
+            bson::serialize_to_vec(
+                &bson::doc!{
+                    "rules": bson::serialize_to_bson(&dp.rules).map_err(Error::ObjectToDocError)?,
+                    "ordering": bson::serialize_to_bson(&dp.ordering).map_err(Error::ObjectToDocError)?
+                }
+            ).map_err(Error::DocToBytesError)?,
+            &dp.auto_refresh.to_str(),
+            last_refresh,
+            &dp.limit
+        ]
+    )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn cache_dynamic_playlist_results(
+    name: &str,
+    songs: &[SongInfo],
+) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction()?;
+
+    //
+    // Remove the previous result
+    tx.execute(
+        "delete from query_results where query_name = ?1",
+        params![name]
+    )?;
+    for song in songs.iter() {
+        tx.execute(
+            "insert into query_results (query_name, uri) values (?1,?2)",
+            params![
+                name,
+                song.uri
+            ]
+        )?;
+    }
+    // Update last_refresh
+    tx.execute(
+        "update queries set last_refresh = ?1 where name = ?2",
+        params![
+            OffsetDateTime::now_utc(),
+            name
+        ]
+    )?;
+
+    tx.commit()?;
+    Ok(())
+}
+
+pub fn get_dynamic_playlist_info(
+    name: &str
+) -> Result<Option<DynamicPlaylist>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select
+bson, name, last_queued, play_count, auto_refresh, last_refresh, `limit`
+from queries where name = ?1"
+        )
+        .unwrap();
+
+    query
+        .query_one(params![name], |r| {
+            let mut reader = Cursor::new(r.get::<usize, Vec<u8>>(0)?);
+            let mut rules_and_ordering = bson::Document
+                ::from_reader(&mut reader)
+                .unwrap();
+            Ok(DynamicPlaylist {
+                name: r.get::<usize, String>(1)?,
+                last_queued: r.get::<usize, Option<OffsetDateTime>>(2)?.map(|ts| ts.unix_timestamp()),
+                play_count: r.get::<usize, usize>(3)?,
+                rules: bson::deserialize_from_bson::<Vec<Rule>>(
+                    std::mem::take(rules_and_ordering.get_mut("rules").unwrap())
+                ).unwrap(),
+                ordering: bson::deserialize_from_bson::<Vec<Ordering>>(
+                    std::mem::take(rules_and_ordering.get_mut("ordering").unwrap())
+                ).unwrap(),
+                auto_refresh: AutoRefresh::from_str(&r.get::<usize, String>(4)?).unwrap(),
+                last_refresh: r.get::<usize, Option<OffsetDateTime>>(5)?.map(|ts| ts.unix_timestamp()),
+                limit: r.get::<usize, Option<u32>>(6)?
+            })
+        }).optional().map_err(Error::DbError)
+}
+
+pub fn get_cached_dynamic_playlist_results(
+    name: &str
+) -> Result<Vec<String>, Error> {
+    let conn = SQLITE_POOL.get().unwrap();
+    let mut query = conn
+        .prepare("select uri from query_results where query_name = ?1")
+        .unwrap();
+    Ok(
+        query
+        .query_map(params![name], |r| r.get::<usize, String>(0))?
+        .map(|r| r.unwrap())
+        .collect::<Vec<String>>()
+    )
+}
+
+pub fn delete_dynamic_playlist(name: &str) -> Result<(), Error> {
+    let mut conn = SQLITE_POOL.get().unwrap();
+    let tx = conn.transaction()?;
+    tx
+        .execute("delete from queries where name = ?1", params![name])
+        .map_err(Error::DbError)?;
+
+    tx
+        .execute("delete from images where key = ?1", params![&format!("dynamic_playlist:{name}")])
+        .map_err(Error::DbError)?;
+
+    tx.commit()?;
     Ok(())
 }

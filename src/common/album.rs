@@ -207,7 +207,7 @@ glib::wrapper! {
 impl Album {
     // ALL of the getters below require that the info field be initialised!
     pub fn get_info(&self) -> &AlbumInfo {
-        &self.imp().info.get().unwrap()
+        self.imp().info.get().unwrap()
     }
 
     pub fn get_folder_uri(&self) -> &str {
@@ -260,15 +260,15 @@ impl Album {
     }
 
     pub fn get_release_date(&self) -> Option<Date> {
-        self.get_info().release_date.clone()
+        self.get_info().release_date
     }
 
     pub fn get_quality_grade(&self) -> QualityGrade {
-        self.get_info().quality_grade.clone()
+        self.get_info().quality_grade
     }
 
     pub fn get_rating(&self) -> Option<i8> {
-        self.imp().stickers.borrow().rating.clone()
+        self.imp().stickers.borrow().rating
     }
 
     pub fn set_rating(&self, new: Option<i8>) {

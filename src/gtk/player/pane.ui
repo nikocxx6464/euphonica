@@ -327,6 +327,13 @@
                   </object>
                 </child>
                 <child>
+                  <object class="EuphonicaRating" id="rating">
+                    <property name="halign">center</property>
+                    <property name="dim-inactive">true</property>
+                    <property name="editable">true</property>
+                  </object>
+                </child>
+                <child>
                   <object class="GtkScrolledWindow" id="lyrics_window">
                     <style>
                       <class name="lyrics-box"/>
@@ -337,7 +344,7 @@
                     <property name="propagate-natural-height">false</property>
                     <property name="has-frame">false</property>
                     <property name="hexpand">true</property>
-                    <property name="height-request">32</property>
+                    <property name="height-request">48</property>
                     <property name="vexpand">true</property>
                     <property name="child">
                       <object class="GtkListBox" id="lyrics_box">

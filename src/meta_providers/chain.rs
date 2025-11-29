@@ -23,7 +23,7 @@ impl MetadataProvider for MetadataChain {
     }
 
     fn get_album_meta(
-        self: &Self,
+        &self,
         key: &mut AlbumInfo,
         mut existing: Option<models::AlbumMeta>,
     ) -> Option<models::AlbumMeta> {
@@ -40,7 +40,7 @@ impl MetadataProvider for MetadataChain {
     }
 
     fn get_artist_meta(
-        self: &Self,
+        &self,
         key: &mut ArtistInfo,
         mut existing: Option<models::ArtistMeta>,
     ) -> Option<models::ArtistMeta> {

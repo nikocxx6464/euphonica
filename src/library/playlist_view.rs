@@ -5,30 +5,22 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 use std::{cell::Cell, cmp::Ordering, ops::Deref, rc::Rc};
-
-use glib::clone;
+use gio::{ActionEntry, SimpleActionGroup};
+use glib::{clone, WeakRef, subclass::Signal, Properties};
 use mpd::Subsystem;
+use std::{cell::OnceCell, sync::OnceLock};
 
-use super::{generic_row::GenericRow, Library};
+use super::Library;
 use crate::{
-    cache::Cache,
-    client::{ClientState, ConnectionState},
-    common::INode,
-    utils::{g_cmp_str_options, g_search_substr, settings_manager},
-    window::EuphonicaWindow,
+    library::PlaylistContentView,
+    cache::Cache, client::{ClientState, ConnectionState}, common::INode, library::playlist_row::PlaylistRow, utils::{g_cmp_str_options, settings_manager}, window::EuphonicaWindow
 };
 
 // Playlist view implementation
 mod imp {
-    use std::{cell::OnceCell, sync::OnceLock};
-
-    use glib::{subclass::Signal, Properties};
-
-    use crate::library::PlaylistContentView;
-
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties)]
+    #[derive(Debug, CompositeTemplate, Properties, Default)]
     #[properties(wrapper_type = super::PlaylistView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/playlist-view.ui")]
     pub struct PlaylistView {
@@ -39,11 +31,7 @@ mod imp {
 
         // Search & filter widgets
         #[template_child]
-        pub sort_dir: TemplateChild<gtk::Image>,
-        #[template_child]
-        pub sort_dir_btn: TemplateChild<gtk::Button>,
-        #[template_child]
-        pub sort_mode: TemplateChild<gtk::DropDown>,
+        pub view_options_btn: TemplateChild<gtk::MenuButton>,
         #[template_child]
         pub search_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -60,7 +48,7 @@ mod imp {
         pub content_view: TemplateChild<PlaylistContentView>,
 
         // Search & filter models
-        pub search_filter: gtk::CustomFilter,
+        pub search_filter: gtk::StringFilter,
         pub sorter: gtk::CustomSorter,
         // Keep last length to optimise search
         // If search term is now longer, only further filter still-matching
@@ -68,40 +56,10 @@ mod imp {
         // If search term is now shorter, only check non-matching items to see
         // if they now match.
         pub last_search_len: Cell<usize>,
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
+        pub cache: OnceCell<Rc<Cache>>,
         #[property(get, set)]
         pub collapsed: Cell<bool>
-    }
-
-    impl Default for PlaylistView {
-        fn default() -> Self {
-            Self {
-                nav_view: TemplateChild::default(),
-                show_sidebar: TemplateChild::default(),
-                // Search & filter widgets
-                sort_dir: TemplateChild::default(),
-                sort_dir_btn: TemplateChild::default(),
-                sort_mode: TemplateChild::default(),
-                search_btn: TemplateChild::default(),
-                search_bar: TemplateChild::default(),
-                search_entry: TemplateChild::default(),
-                // Content
-                list_view: TemplateChild::default(),
-                content_page: TemplateChild::default(),
-                content_view: TemplateChild::default(),
-                // Search & filter models
-                search_filter: gtk::CustomFilter::default(),
-                sorter: gtk::CustomSorter::default(),
-                // Keep last length to optimise search
-                // If search term is now longer, only further filter still-matching
-                // items.
-                // If search term is now shorter, only check non-matching items to see
-                // if they now match.
-                last_search_len: Cell::new(0),
-                library: OnceCell::new(),
-                collapsed: Cell::new(false)
-            }
-        }
     }
 
     #[glib::object_subclass]
@@ -147,6 +105,168 @@ mod imp {
                     this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
                 }
             ));
+
+            // Setup sorting
+            let settings = settings_manager();
+            let state = settings.child("state").child("playlistview");
+            let library_settings = settings.child("library");
+            self.sorter.set_sort_func(clone!(
+                #[strong]
+                library_settings,
+                #[strong]
+                state,
+                move |obj1, obj2| {
+                    let inode1 = obj1
+                        .downcast_ref::<INode>()
+                        .expect("Sort obj has to be a common::INode.");
+
+                    let inode2 = obj2
+                        .downcast_ref::<INode>()
+                        .expect("Sort obj has to be a common::INode.");
+
+                    // Should we sort ascending?
+                    let asc = state.enum_("sort-direction") > 0;
+                    // Should the sorting be case-sensitive, i.e. uppercase goes first?
+                    let case_sensitive = library_settings.boolean("sort-case-sensitive");
+                    // Should nulls be put first or last?
+                    let nulls_first = library_settings.boolean("sort-nulls-first");
+
+                    // Vary behaviour depending on sort menu
+                    match state.enum_("sort-by") {
+                        // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
+                        6 => {
+                            // Filename
+                            g_cmp_str_options(
+                                Some(inode1.get_uri()),
+                                Some(inode2.get_uri()),
+                                nulls_first,
+                                asc,
+                                case_sensitive,
+                            )
+                        }
+                        7 => {
+                            // Last modified
+                            g_cmp_str_options(
+                                inode1.get_last_modified(),
+                                inode2.get_last_modified(),
+                                nulls_first,
+                                asc,
+                                case_sensitive,
+                            )
+                        }
+                        _ => unreachable!(),
+                    }
+                }
+            ));
+
+            // Setup searching
+            library_settings
+                .bind("search-case-sensitive", &self.search_filter, "ignore-case")
+                .get_only()
+                .invert_boolean()
+                .build();
+            self.search_filter.set_expression(Some(
+                &gtk::PropertyExpression::new(
+                    INode::static_type(),
+                    Option::<gtk::PropertyExpression>::None,
+                    "uri"
+                )
+            ));
+            let search_entry = self.search_entry.get();
+            search_entry
+                .bind_property("text", &self.search_filter, "search")
+                .build();
+            search_entry.connect_search_changed(clone!(
+                #[weak(rename_to = this)]
+                self,
+                move |entry| {
+                    let text = entry.text();
+                    let new_len = text.len();
+                    let old_len = this.last_search_len.replace(new_len);
+                    match new_len.cmp(&old_len) {
+                        Ordering::Greater => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::MoreStrict);
+                        }
+                        Ordering::Less => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::LessStrict);
+                        }
+                        Ordering::Equal => {
+                            this
+                                .search_filter
+                                .changed(gtk::FilterChange::Different);
+                        }
+                    }
+                }
+            ));
+
+            let view_options_btn = self.view_options_btn.get();
+            state
+                .bind("sort-direction", &view_options_btn, "icon-name")
+                .get_only()
+                .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
+                    "asc" => Some("view-sort-ascending-symbolic".to_value()),
+                    _ => Some("view-sort-descending-symbolic".to_value()),
+                })
+                .build();
+
+            // Note to self: to work with menus, an action's state must be boolean or string.
+            let action_sort_by = ActionEntry::builder("sort-by")
+                .parameter_type(Some(&String::static_variant_type()))
+                .state(state.enum_("sort-by").to_string().into())
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    state,
+                    move |_, action, param| {
+                        let param = param
+                            .expect("Could not get parameter.")
+                            .get::<String>()
+                            .expect("The value needs to be of type `String`.");
+                        let idx = param.parse::<i32>().unwrap();
+
+
+                        if state.set_enum("sort-by", idx).is_ok() {
+                            this.sorter.changed(gtk::SorterChange::Different);
+                            action.set_state(&param.to_variant());
+                        }
+                    }))
+                .build();
+
+            let action_sort_direction = ActionEntry::builder("sort-direction")
+                .parameter_type(Some(&String::static_variant_type()))
+                .state(state.enum_("sort-direction").to_string().into())
+                .activate(clone!(
+                    #[weak(rename_to = this)]
+                    self,
+                    #[strong]
+                    state,
+                    move |_, action, param| {
+                        let param = param
+                            .expect("Could not get parameter.")
+                            .get::<String>()
+                            .expect("The value needs to be of type `String`.");
+                        let idx = param.parse::<i32>().unwrap();
+
+
+                        if state.set_enum("sort-direction", idx).is_ok() {
+                            this.sorter.changed(gtk::SorterChange::Inverted);
+                            action.set_state(&param.to_variant());
+                        }
+                    }))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = SimpleActionGroup::new();
+            actions.add_action_entries([
+                action_sort_by,
+                action_sort_direction
+            ]);
+            self.obj().insert_action_group("playlist-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
@@ -187,10 +307,10 @@ impl PlaylistView {
 
     pub fn setup(
         &self,
-        library: Library,
+        library: &Library,
         cache: Rc<Cache>,
-        client_state: ClientState,
-        window: EuphonicaWindow,
+        client_state: &ClientState,
+        window: &EuphonicaWindow,
     ) {
         let content_view = self.imp().content_view.get();
         content_view.setup(library.clone(), client_state.clone(), cache.clone(), window);
@@ -199,10 +319,11 @@ impl PlaylistView {
         });
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init PlaylistView with Library");
-        self.setup_sort();
-        self.setup_search();
+            .set(Some(library));
+        self.imp()
+            .cache
+            .set(cache.clone())
+            .expect("Cannot init PlaylistView with cache controller");
         self.setup_listview();
 
         client_state.connect_notify_local(
@@ -213,7 +334,7 @@ impl PlaylistView {
                 move |state, _| {
                     if state.get_connection_state() == ConnectionState::Connected {
                         // Newly-connected? Get all playlists.
-                        this.imp().library.get().unwrap().init_playlists();
+                        this.imp().library.upgrade().unwrap().init_playlists(false);
                     }
                 }
             ),
@@ -226,221 +347,42 @@ impl PlaylistView {
                 #[weak(rename_to = this)]
                 self,
                 move |_: ClientState, subsys: glib::BoxedAnyObject| {
-                    match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Playlist => {
-                            let library = this.imp().library.get().unwrap();
-                            // Reload playlists
-                            library.init_playlists();
-                            // Also try to reload content view too, if it's still bound to one.
-                            // If its currently-bound playlist has just been deleted, don't rebind it.
-                            // Instead, force-switch the nav view to this page.
-                            let content_view = this.imp().content_view.get();
-                            if let Some(playlist) = content_view.current_playlist() {
-                                // If this change involves renaming the current playlist, ensure
-                                // we have updated the playlist object to the new name BEFORE sending
-                                // the actual rename command to MPD, such this this will always occur
-                                // with the current name being the NEW one.
-                                // Else, we will lose track of the current playlist.
-                                let curr_name = playlist.get_name();
-                                // Temporarily unbind
-                                content_view.unbind(true);
-                                let playlists = library.playlists();
-                                if let Some(idx) = playlists.find_with_equal_func(move |obj| {
-                                    obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
-                                }) {
-                                    this.on_playlist_clicked(
-                                        playlists
-                                            .item(idx)
-                                            .unwrap()
-                                            .downcast_ref::<INode>()
-                                            .unwrap(),
-                                    );
-                                } else {
-                                    this.pop();
-                                }
+                    if subsys.borrow::<Subsystem>().deref() == &Subsystem::Playlist {
+                        let library = this.imp().library.upgrade().unwrap();
+                        // Reload playlists
+                        library.init_playlists(true);
+                        // Also try to reload content view too, if it's still bound to one.
+                        // If its currently-bound playlist has just been deleted, don't rebind it.
+                        // Instead, force-switch the nav view to this page.
+                        let content_view = this.imp().content_view.get();
+                        if let Some(playlist) = content_view.current_playlist() {
+                            // If this change involves renaming the current playlist, ensure
+                            // we have updated the playlist object to the new name BEFORE sending
+                            // the actual rename command to MPD, such this this will always occur
+                            // with the current name being the NEW one.
+                            // Else, we will lose track of the current playlist.
+                            let curr_name = playlist.get_name();
+                            // Temporarily unbind
+                            content_view.unbind(true);
+                            let playlists = library.playlists();
+                            if let Some(idx) = playlists.find_with_equal_func(move |obj| {
+                                obj.downcast_ref::<INode>().unwrap().get_name() == curr_name
+                            }) {
+                                this.on_playlist_clicked(
+                                    playlists
+                                        .item(idx)
+                                        .unwrap()
+                                        .downcast_ref::<INode>()
+                                        .unwrap(),
+                                );
+                            } else {
+                                this.pop();
                             }
                         }
-                        _ => {}
                     }
                 }
             ),
         );
-    }
-
-    fn setup_sort(&self) {
-        // Setup sort widget & actions
-        let settings = settings_manager();
-        let state = settings.child("state").child("playlistview");
-        let library_settings = settings.child("library");
-        let sort_dir_btn = self.imp().sort_dir_btn.get();
-        sort_dir_btn.connect_clicked(clone!(
-            #[weak]
-            state,
-            move |_| {
-                if state.string("sort-direction") == "asc" {
-                    let _ = state.set_string("sort-direction", "desc");
-                } else {
-                    let _ = state.set_string("sort-direction", "asc");
-                }
-            }
-        ));
-        let sort_dir = self.imp().sort_dir.get();
-        state
-            .bind("sort-direction", &sort_dir, "icon-name")
-            .get_only()
-            .mapping(|dir, _| match dir.get::<String>().unwrap().as_ref() {
-                "asc" => Some("view-sort-ascending-symbolic".to_value()),
-                _ => Some("view-sort-descending-symbolic".to_value()),
-            })
-            .build();
-        let sort_mode = self.imp().sort_mode.get();
-        state
-            .bind("sort-by", &sort_mode, "selected")
-            .mapping(|val, _| {
-                // TODO: i18n
-                match val.get::<String>().unwrap().as_ref() {
-                    "filename" => Some(0.to_value()),
-                    "last-modified" => Some(1.to_value()),
-                    _ => unreachable!(),
-                }
-            })
-            .set_mapping(|val, _| match val.get::<u32>().unwrap() {
-                0 => Some("filename".to_variant()),
-                1 => Some("last-modified".to_variant()),
-                _ => unreachable!(),
-            })
-            .build();
-        self.imp().sorter.set_sort_func(clone!(
-            #[strong]
-            library_settings,
-            #[strong]
-            state,
-            move |obj1, obj2| {
-                let inode1 = obj1
-                    .downcast_ref::<INode>()
-                    .expect("Sort obj has to be a common::INode.");
-
-                let inode2 = obj2
-                    .downcast_ref::<INode>()
-                    .expect("Sort obj has to be a common::INode.");
-
-                // Should we sort ascending?
-                let asc = state.enum_("sort-direction") > 0;
-                // Should the sorting be case-sensitive, i.e. uppercase goes first?
-                let case_sensitive = library_settings.boolean("sort-case-sensitive");
-                // Should nulls be put first or last?
-                let nulls_first = library_settings.boolean("sort-nulls-first");
-
-                // Vary behaviour depending on sort menu
-                match state.enum_("sort-by") {
-                    // Refer to the io.github.htkhiem.Euphonica.sortby enum the gschema
-                    6 => {
-                        // Filename
-                        g_cmp_str_options(
-                            Some(inode1.get_uri()),
-                            Some(inode2.get_uri()),
-                            nulls_first,
-                            asc,
-                            case_sensitive,
-                        )
-                    }
-                    7 => {
-                        // Last modified
-                        g_cmp_str_options(
-                            inode1.get_last_modified(),
-                            inode2.get_last_modified(),
-                            nulls_first,
-                            asc,
-                            case_sensitive,
-                        )
-                    }
-                    _ => unreachable!(),
-                }
-            }
-        ));
-
-        // Update when changing sort settings
-        state.connect_changed(
-            Some("sort-by"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Updating sort...");
-                    this.imp().sorter.changed(gtk::SorterChange::Different);
-                }
-            ),
-        );
-        state.connect_changed(
-            Some("sort-direction"),
-            clone!(
-                #[weak(rename_to = this)]
-                self,
-                move |_, _| {
-                    println!("Flipping sort...");
-                    // Don't actually sort, just flip the results :)
-                    this.imp().sorter.changed(gtk::SorterChange::Inverted);
-                }
-            ),
-        );
-    }
-
-    fn setup_search(&self) {
-        let settings = settings_manager();
-        let library_settings = settings.child("library");
-        // Set up search filter
-        self.imp().search_filter.set_filter_func(clone!(
-            #[weak(rename_to = this)]
-            self,
-            #[strong]
-            library_settings,
-            #[upgrade_or]
-            true,
-            move |obj| {
-                let inode = obj
-                    .downcast_ref::<INode>()
-                    .expect("Search obj has to be a common::INode.");
-
-                let search_term = this.imp().search_entry.text();
-                if search_term.is_empty() {
-                    return true;
-                }
-
-                // Should the searching be case-sensitive?
-                let case_sensitive = library_settings.boolean("search-case-sensitive");
-                g_search_substr(Some(inode.get_uri()), &search_term, case_sensitive)
-            }
-        ));
-
-        // Connect search entry to filter. Filter will later be put in GtkSearchModel.
-        // That GtkSearchModel will listen to the filter's changed signal.
-        let search_entry = self.imp().search_entry.get();
-        search_entry.connect_search_changed(clone!(
-            #[weak(rename_to = this)]
-            self,
-            move |entry| {
-                let text = entry.text();
-                let new_len = text.len();
-                let old_len = this.imp().last_search_len.replace(new_len);
-                match new_len.cmp(&old_len) {
-                    Ordering::Greater => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::MoreStrict);
-                    }
-                    Ordering::Less => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::LessStrict);
-                    }
-                    Ordering::Equal => {
-                        this.imp()
-                            .search_filter
-                            .changed(gtk::FilterChange::Different);
-                    }
-                }
-            }
-        ));
     }
 
     pub fn on_playlist_clicked(&self, inode: &INode) {
@@ -452,13 +394,14 @@ impl PlaylistView {
         }
         self.imp()
             .library
-            .get()
+            .upgrade()
             .unwrap()
             .init_playlist(inode.get_name().unwrap());
     }
 
     fn setup_listview(&self) {
-        let library = self.imp().library.get().unwrap();
+        let library = self.imp().library.upgrade().unwrap();
+        let cache = self.imp().cache.get().unwrap();
         // client_state.connect_closure(
         //     "inode-basic-info-downloaded",
         //     false,
@@ -498,32 +441,39 @@ impl PlaylistView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `INodeCell` during setup
         factory.connect_setup(clone!(
             #[weak]
             library,
+            #[weak]
+            cache,
             move |_, list_item| {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let folder_row = GenericRow::new(library, &item);
+                let folder_row = PlaylistRow::new(false, library, item, cache);
                 item.set_child(Some(&folder_row));
             }
         ));
 
-        // factory.connect_teardown(
-        //     move |_, list_item| {
-        //         // Get `INodeCell` from `ListItem` (the UI widget)
-        //         let child: Option<GenericRow> = list_item
-        //             .downcast_ref::<ListItem>()
-        //             .expect("Needs to be ListItem")
-        //             .child()
-        //             .and_downcast::<GenericRow>();
-        //         if let Some(c) = child {
-        //             c.teardown();
-        //         }
-        //     }
-        // );
+        factory.connect_bind(
+            move |_, list_item| {
+                let item = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem");
+
+                let playlist = item
+                    .item()
+                    .and_downcast::<INode>()
+                    .expect("The item has to be a common::INode.");
+
+                let child: PlaylistRow = item
+                    .child()
+                    .and_downcast::<PlaylistRow>()
+                    .expect("The child has to be an `PlaylistRow`.");
+
+                child.bind(&playlist);
+            }
+        );
 
         // Set the factory of the list view
         self.imp().list_view.set_factory(Some(&factory));

@@ -26,7 +26,7 @@ impl LastfmWrapper {
         let key = settings.string("api-key").to_string();
         // Return None if there is no API key specified.
         if !key.is_empty() {
-            println!("[Last.fm] Calling `{}` with query {:?}", method, params);
+            println!("[Last.fm] Calling `{method}` with query {params:?}");
             let resp = self
                 .client
                 .get(API_ROOT)
@@ -98,7 +98,7 @@ impl MetadataProvider for LastfmWrapper {
                                 if let Some(artist) = key.get_artist_tag() {
                                     new.artist = Some(artist.to_owned());
                                 }
-                                if &new.name != &key.title {
+                                if new.name != key.title {
                                     new.name = key.title.to_owned();
                                 }
                                 // If there is existing data, merge new data to it
@@ -109,13 +109,13 @@ impl MetadataProvider for LastfmWrapper {
                                 }
                             }
                             Err(err) => {
-                                println!("[Last.fm] get_album_meta: {}", err);
+                                println!("[Last.fm] get_album_meta: {err}");
                                 existing
                             }
                         }
                     }
                     other => {
-                        println!("[Last.fm] get_album_meta: failed with status {:?}", other);
+                        println!("[Last.fm] get_album_meta: failed with status {other:?}");
                         existing
                     }
                 }
@@ -161,7 +161,7 @@ impl MetadataProvider for LastfmWrapper {
                                 // Override artist name in case the returned values
                                 // are slightly different (casing, apostrophes, etc.), else
                                 // we won't be able to query it back using our own tags.
-                                if &new.name != &key.name {
+                                if new.name != key.name {
                                     new.name = key.name.to_owned();
                                 }
                                 if let Some(old) = existing {
@@ -171,13 +171,13 @@ impl MetadataProvider for LastfmWrapper {
                                 }
                             }
                             Err(err) => {
-                                println!("[Last.fm] get_artist_meta: {}", err);
+                                println!("[Last.fm] get_artist_meta: {err}");
                                 existing
                             }
                         }
                     }
                     other => {
-                        println!("[Last.fm] get_artist_meta: failed with status {:?}", other);
+                        println!("[Last.fm] get_artist_meta: failed with status {other:?}");
                         existing
                     }
                 }

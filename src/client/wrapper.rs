@@ -12,7 +12,7 @@ use mpd::{
     song::Id,
     Channel, EditAction, Idle, Output, SaveMode, Subsystem,
 };
-use zbus::{Connection as ZConnection, Proxy as ZProxy, Result as ZResult};
+use zbus::{Connection as ZConnection, Proxy as ZProxy};
 
 use std::net::TcpStream;
 use std::os::unix::net::UnixStream;
@@ -32,7 +32,7 @@ use crate::{
     utils,
 };
 
-use super::{AsyncClientMessage, BackgroundTask};
+use super::{AsyncClientMessage, BackgroundTask, StickerSetMode};
 use super::state::{ClientState, ConnectionState, StickersSupportLevel};
 use super::stream::StreamWrapper;
 use super::password::get_mpd_password;
@@ -306,6 +306,15 @@ impl MpdWrapper {
                         BackgroundTask::QueuePlaylist(name, play_from) => {
                             background::load_playlist(&mut client, &sender_to_fg, &name, play_from);
                         }
+                        BackgroundTask::FetchDynamicPlaylistSongs(dp, cache) => {
+                            background::fetch_dynamic_playlist(&mut client, &sender_to_fg, dp, cache);
+                        }
+                        BackgroundTask::FetchCachedDynamicPlaylistSongs(name) => {
+                            background::fetch_dynamic_playlist_cached(&mut client, &sender_to_fg, &name);
+                        }
+                        BackgroundTask::QueueDynamicPlaylist(name, play) => {
+                            background::queue_cached_dynamic_playlist(&mut client, &sender_to_fg, &name, play);
+                        }
                     }
                 } else {
                     // If not, go into idle mode
@@ -480,6 +489,9 @@ impl MpdWrapper {
             AsyncClientMessage::BackgroundError(error, or) => {
                 self.handle_common_mpd_error(&error, or);
             }
+            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name, songs) => {
+                self.on_songs_downloaded("dynamic-playlist-songs-downloaded", Some(name), songs)
+            }
         }
         glib::ControlFlow::Continue
     }
@@ -572,7 +584,7 @@ impl MpdWrapper {
                 });
             } else {
                 handle = gio::spawn_blocking(move || {
-                    let stream = StreamWrapper::new_unix(UnixStream::connect(&path.as_str()).map_err(mpd::error::Error::Io)?);
+                    let stream = StreamWrapper::new_unix(UnixStream::connect(path.as_str()).map_err(mpd::error::Error::Io)?);
                     mpd::Client::new(stream)
                 });
             }
@@ -680,6 +692,11 @@ impl MpdWrapper {
             }
         }
 
+        // For queue errors, reenable queue buttons regardless
+        if let Some(ClientError::Queuing) = or.as_ref() {
+            self.state.set_queuing(false);
+        }
+
         if !handled {
             if let Some(or_msg) = or {
                 self.state.emit_error(or_msg);
@@ -781,13 +798,38 @@ impl MpdWrapper {
                 }
             }
         }
-        return None;
+        None
     }
 
-    pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str) {
+    pub fn get_known_stickers(&self, typ: &str, uri: &str) -> Option<Stickers> {
         let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
         if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
-            match client.set_sticker(typ, uri, name, value) {
+            match client.stickers(typ, uri) {
+                Ok(kvs) => {
+                    return Some(Stickers::from_mpd_kv(kvs));
+                }
+                Err(error) => {
+                    if let MpdError::Server(server_err) = error {
+                        self.handle_sticker_server_error(server_err);
+                    } else {
+                        self.handle_common_mpd_error(&error, None);
+                    }
+                    return None;
+                }
+            }
+        }
+        None
+    }
+
+    pub fn set_sticker(&self, typ: &str, uri: &str, name: &str, value: &str, mode: StickerSetMode) {
+        let min_lvl = if typ == "song" { StickersSupportLevel::SongsOnly } else { StickersSupportLevel::All };
+        if let (true, Some(client)) = (self.state.get_stickers_support_level() >= min_lvl, self.main_client.borrow_mut().as_mut()) {
+            let cmd = match mode {
+                StickerSetMode::Inc => client.inc_sticker(typ, uri, name, value),
+                StickerSetMode::Set => client.set_sticker(typ, uri, name, value),
+                StickerSetMode::Dec => client.dec_sticker(typ, uri, name, value),
+            };
+            match cmd {
                 Ok(()) => {self.force_idle();},
                 Err(error) => {
                     if let MpdError::Server(server_err) = error {
@@ -821,7 +863,7 @@ impl MpdWrapper {
             self.state.set_supports_playlists(false);
             println!("Playlists are not supported.");
         } else {
-            println!("Playlist operation error: {:?}", err);
+            println!("Playlist operation error: {err:?}");
         }
     }
 
@@ -846,7 +888,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Vec::with_capacity(0);
+        Vec::with_capacity(0)
     }
 
     pub fn load_playlist(&self, name: &str) -> Result<(), Option<MpdError>> {
@@ -867,7 +909,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Err(None);
+        Err(None)
     }
 
     pub fn save_queue_as_playlist(
@@ -893,7 +935,7 @@ impl MpdWrapper {
                 }
             }
         }
-        return Err(None);
+        Err(None)
     }
 
     pub fn rename_playlist(&self, old_name: &str, new_name: &str) -> Result<(), Option<MpdError>> {
@@ -909,7 +951,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 },
             }
         } else {
@@ -930,7 +972,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 }
             }
         } else {
@@ -942,7 +984,8 @@ impl MpdWrapper {
         if let Some(client) = self.main_client.borrow_mut().as_mut() {
             match client.pl_remove(name) {
                 Ok(()) => {
-                    self.force_idle();
+                    // Don't force idle, as deleting a playlist won't trigger
+                    // an idle message.
                     Ok(())
                 },
                 Err(e) => {
@@ -951,7 +994,7 @@ impl MpdWrapper {
                     } else {
                         self.handle_common_mpd_error(&e, None);
                     }
-                    return Err(Some(e));
+                    Err(Some(e))
                 }
             }
         } else {
@@ -973,8 +1016,8 @@ impl MpdWrapper {
                 // Check whether we need to sync queue with server side (inefficient)
                 if sync_queue {
                     let old_version = self.queue_version.replace(status.queue_version);
-                    if status.queue_version > old_version {
-                        if status.queue_version > self.expected_queue_version.get() {
+                    if status.queue_version > old_version
+                        && status.queue_version > self.expected_queue_version.get() {
                             self.expected_queue_version.set(status.queue_version);
                             self.queue_background(
                                 if old_version == 0 {
@@ -985,7 +1028,6 @@ impl MpdWrapper {
                                 true
                             );
                         }
-                    }
                 }
                 Some(status)
             }
@@ -997,12 +1039,23 @@ impl MpdWrapper {
         }
     }
 
-    pub fn get_song_at_queue_id(&self, id: u32) -> Option<Song> {
-        if let Some(client) = self.main_client.borrow_mut().as_mut() {
-            match client.songs(mpd::Id(id)) {
+    pub fn get_song_at_queue_id(&self, id: u32, fetch_stickers: bool) -> Option<Song> {
+        let resp: Option<Result<Vec<mpd::Song>, MpdError>>;
+        {
+            resp = self.main_client.borrow_mut().as_mut().map(|client| client.songs(mpd::Id(id)));
+        }
+        if let Some(res) = resp {
+            match res {
                 Ok(mut songs) => {
-                    if songs.len() > 0 {
-                        Some(Song::from(std::mem::take(&mut songs[0])))
+                    if !songs.is_empty() {
+                        // Found a song. Now fetch its stickers.
+                        let res = Song::from(std::mem::take(&mut songs[0]));
+                        if fetch_stickers {
+                            if let Some(stickers) = self.get_known_stickers("song", res.get_uri()) {
+                                res.set_stickers(stickers);
+                            }
+                        }
+                        Some(res)
                     } else {
                         None
                     }
@@ -1160,24 +1213,22 @@ impl MpdWrapper {
     }
 
     fn on_songs_downloaded(&self, signal_name: &str, tag: Option<String>, songs: Vec<SongInfo>) {
-        if !songs.is_empty() {
-            if let Some(tag) = tag {
-                self.state.emit_by_name::<()>(
-                    signal_name,
-                    &[
-                        &tag,
-                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                    ]
-                );
-            }
-            else {
-                self.state.emit_by_name::<()>(
-                    signal_name,
-                    &[
-                        &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
-                    ]
-                );
-            }
+        if let Some(tag) = tag {
+            self.state.emit_by_name::<()>(
+                signal_name,
+                &[
+                    &tag,
+                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                ]
+            );
+        }
+        else {
+            self.state.emit_by_name::<()>(
+                signal_name,
+                &[
+                    &BoxedAnyObject::new(songs.into_iter().map(Song::from).collect::<Vec<Song>>()),
+                ]
+            );
         }
     }
 

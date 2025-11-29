@@ -11,7 +11,7 @@
               <object class="AdwToolbarView">
                 <child type="top">
 					        <object class="AdwHeaderBar">
-                    <property name="show-title" bind-source="EuphonicaArtistView" bind-property="collapsed" bind-flags="sync-create|invert-boolean"></property>
+                    <property name="show-title">false</property>
                     <child type="start">
                       <object class="GtkButton" id="show_sidebar">
                         <property name="icon-name">dock-left-symbolic</property>

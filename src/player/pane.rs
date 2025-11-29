@@ -10,16 +10,12 @@ use gtk::{
 use std::{cell::{Cell, RefCell}, fs::{self, File}, io::Write};
 
 use crate::{
-    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING},
-    common::paintables::FadePaintable,
-    utils::{self, settings_manager},
+    cache::placeholders::{ALBUMART_PLACEHOLDER, EMPTY_ALBUM_STRING, EMPTY_ARTIST_STRING}, client::{state::StickersSupportLevel, ClientState}, common::{paintables::FadePaintable, Rating}, player::seekbar::Seekbar, utils::{self, settings_manager}
 };
 
 use super::{MpdOutput, PlaybackControls, PlaybackState, Player, VolumeKnob};
 
 mod imp {
-    use crate::player::seekbar::Seekbar;
-
     use super::*;
 
     #[derive(Default, CompositeTemplate)]
@@ -36,6 +32,8 @@ mod imp {
         pub artist: TemplateChild<gtk::Label>,
         #[template_child]
         pub album: TemplateChild<gtk::Label>,
+        #[template_child]
+        pub rating: TemplateChild<Rating>,
 
         // Lyrics box
         #[template_child]
@@ -244,9 +242,9 @@ impl PlayerPane {
         }
     }
 
-    pub fn setup(&self, player: &Player) {
+    pub fn setup(&self, player: &Player, client_state: &ClientState) {
         self.setup_volume_knob(player);
-        self.bind_state(player);
+        self.bind_state(player, client_state);
         self.imp().playback_controls.setup(player);
         self.imp().seekbar.setup(player);
     }
@@ -362,7 +360,7 @@ impl PlayerPane {
             .build();
     }
 
-    fn bind_state(&self, player: &Player) {
+    fn bind_state(&self, player: &Player, client_state: &ClientState) {
         let imp = self.imp();
         let info_box = imp.info_box.get();
         player
@@ -410,6 +408,39 @@ impl PlayerPane {
             .sync_create()
             .build();
 
+        let rating = imp.rating.get();
+        player
+            .bind_property("rating", &rating, "value")
+            .sync_create()
+            .build();
+
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &rating,
+                "visible"
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| {
+                Some((lvl >= StickersSupportLevel::SongsOnly).to_value())
+            })
+            .sync_create()
+            .build();
+
+        rating
+            .connect_closure(
+                "changed",
+                false,
+                closure_local!(
+                    #[weak]
+                    player,
+                    move |rating: Rating| {
+                        let rating_val = rating.value();
+                        let rating_opt = if rating_val > 0 { Some(rating_val)} else { None };
+                        player.rate_current_song(rating_opt);
+                    }
+                )
+            );
+
         let lyric_lines = player.lyrics();
         lyric_lines.connect_notify_local(Some("n-items"), clone!(
             #[weak(rename_to = this)]
@@ -429,8 +460,10 @@ impl PlayerPane {
         // Labels at 20% opacity.
         let lyrics_box = imp.lyrics_box.get();
         lyrics_box.bind_model(Some(&lyric_lines), clone!(
-            #[strong]
+            #[weak]
             player,
+            #[upgrade_or]
+            gtk::Label::default().into(),
             move |line| {
                 let widget = gtk::Label::new(Some(&line.downcast_ref::<gtk::StringObject>().unwrap().string()));
                 widget.set_halign(gtk::Align::Center);
@@ -444,7 +477,7 @@ impl PlayerPane {
         ));
 
         lyrics_box.connect_row_activated(clone!(
-            #[strong]
+            #[weak]
             player,
             move |_, row: &gtk::ListBoxRow| {
                 player.seek_to_lyric_line(row.index());
@@ -463,12 +496,12 @@ impl PlayerPane {
             }
         ));
 
-        self.update_outputs(&player);
+        self.update_outputs(player);
         player.connect_closure(
             "outputs-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
                 move |player: Player| {
                     this.update_outputs(&player);
@@ -481,7 +514,7 @@ impl PlayerPane {
             "cover-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);
@@ -559,11 +592,10 @@ impl PlayerPane {
                         if let Some(uri) = receiver
                             .recv().await
                                    .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                   .map(|sel_files| {
+                                   .and_then(|sel_files| {
                                        let uris = sel_files.uris();
-                                       if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                       if uris.is_empty() {None} else {Some(uris[0].to_string())}
                                    })
-                                   .flatten()
                         {
                             let uri = urlencoding::decode(if uri.starts_with("file://") {
                                 &uri[7..]
@@ -604,11 +636,10 @@ impl PlayerPane {
                             if let Some(uri) = receiver
                                 .recv().await
                                        .unwrap().ok()  // Once for receiver result and once for ashpd's
-                                       .map(|sel_files| {
+                                       .and_then(|sel_files| {
                                            let uris = sel_files.uris();
-                                           if uris.len() == 0 {None} else {Some(uris[0].to_string())}
+                                           if uris.is_empty() {None} else {Some(uris[0].to_string())}
                                        })
-                                       .flatten()
                             {
                                 let uri = urlencoding::decode(if uri.starts_with("file://") {
                                     &uri[7..]
@@ -632,8 +663,8 @@ impl PlayerPane {
             }
         ));
 
-        self.update_lyrics_availability(&player);
-        self.update_lyrics_state(&player);
+        self.update_lyrics_availability(player);
+        self.update_lyrics_state(player);
     }
 
     fn update_album_art(&self, tex: Option<gdk::Texture>) {
@@ -654,7 +685,7 @@ impl PlayerPane {
             .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
-        let new_len = outputs.len() as usize;
+        let new_len = outputs.len();
         if new_len == 0 {
             section.set_visible(false);
         } else {
@@ -693,7 +724,7 @@ impl PlayerPane {
                 }
                 output_widgets.reserve_exact(new_len - curr_len);
                 for o in &outputs[curr_len..] {
-                    let w = MpdOutput::from_output(&o.borrow(), &player);
+                    let w = MpdOutput::from_output(&o.borrow(), player);
                     stack.add_child(&w);
                     output_widgets.push(w);
                 }

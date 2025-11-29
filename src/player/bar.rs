@@ -311,13 +311,15 @@ impl PlayerBar {
             .sync_create()
             .build();
 
-        self.update_outputs(&player);
+        self.update_outputs(player);
         player.connect_closure(
             "outputs-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |player: Player| {
                     this.update_outputs(&player);
                 }
@@ -329,8 +331,10 @@ impl PlayerBar {
             "cover-changed",
             false,
             closure_local!(
-                #[strong(rename_to = this)]
+                #[weak(rename_to = this)]
                 self,
+                #[upgrade_or]
+                (),
                 move |_: Player, tex: Option<gdk::Texture>| {
                     this.update_album_art(tex);
                 }
@@ -371,7 +375,7 @@ impl PlayerBar {
             .map(|i| outputs.item(i).unwrap().downcast::<glib::BoxedAnyObject>().unwrap()).collect();
         let section = self.imp().output_section.get();
         let stack = self.imp().output_stack.get();
-        let new_len = outputs.len() as usize;
+        let new_len = outputs.len();
         if new_len == 0 {
             section.set_visible(false);
         } else {
@@ -410,7 +414,7 @@ impl PlayerBar {
                 }
                 output_widgets.reserve_exact(new_len - curr_len);
                 for o in &outputs[curr_len..] {
-                    let w = MpdOutput::from_output(&o.borrow(), &player);
+                    let w = MpdOutput::from_output(&o.borrow(), player);
                     stack.add_child(&w);
                     output_widgets.push(w);
                 }
