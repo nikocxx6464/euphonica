@@ -21,26 +21,24 @@
 
   <description>
     <p>
-      Euphonica is an MPD client with integrated spectrum visualiser, metadata downloading &amp; more.
+      MPD client with dynamic playlists, integrated spectrum visualiser, synced lyrics &amp; more.
     </p>
+    <p>**Features**</p>
     <ul>
-      <li>Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration</li>
-      <li>Automatically fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB). All external metadata are cached locally &amp; persisted on disk to avoid needless API calls.</li>
-      <li>Playlist browser and editor</li>
-      <li>Integrated MPRIS client with background running supported (via the XDG Background protocol).</li>
-      <li>Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.</li>
-      <li>Rate albums (requires MPD 0.24+)</li>
-      <li>Live bitrate readout + audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums &amp; detailed format printout</li>
-      <li>Browse your library by album, artist and folders with multiselection support. Browsing by genre and other criteria are planned.</li>
-      <li>Sort albums by name, AlbumArtist or release date (provided you have the tags)</li>
-      <li>Asynchronous search for large collections</li>
-      <li>Configurable multi-artist tag splitting</li>
-      <li>Performant album art fetching &amp; display (cached with Stretto)</li>
-      <li>Super-fast, multithreaded, statically-cached background blur powered by libblur</li>
+      <li>Supports most MPD features, from queue reordering and ReplayGain to output control, crossfade and MixRamp.</li>
+      <li>Client-side dynamic playlists: both query and sticker filter rules, multiple ordering clauses, fetch-first limits, scheduled refreshes, all via an intuitive editor UI.</li>
+      <li>Fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supporting Last.fm, MusicBrainz and LRCLIB).</li>
+      <li>Configurable multi-artist tag splitting.</li>
+      <li>Stay in control while in the background via MPRIS &amp; XDG Background Portal.</li>
+      <li>Customisable spectrum visualiser (FIFO or system PipeWire).</li>
+      <li>Live bitrate readout + audio quality indicators (lossy, lossless, hi-res, DSD).</li>
+      <li>Largely **zero-cost** static background blur.</li>
       <li>Volume knob with dBFS readout support ('cuz why not?)</li>
       <li>User-friendly configuration UI &amp; GSettings backend</li>
-      <li>MPD passwords are securely stored in your user's login keyring</li>
+      <li>MPD passwords are securely stored in your user's login keyring.</li>
+      <li>Works with large playlists (tested with 30K songs).</li>
       <li>Commands are bundled into lists for efficient MPD-side processing where possible.</li>
+      <li>myMPD-compatible stickers handling.</li>
     </ul>
     <p><em>PipeWire permissions</em></p>
     <p>Euphonica requires PipeWire capture permissions for its PipeWire visualizer backend, but currently it is only possible to specify a "blanket" PipeWire permission that also allows screen recording, microphone access, etc. Euphonica does not make use of these extra permissions, and will be updated to use a more restricted "audio portal" when one becomes available.</p>
@@ -78,6 +76,16 @@
   </screenshots>
 
   <releases>
+    <release version="0.98.0-beta" date="2025-11-30">
+      <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.98.0-beta</url>
+      <description>
+        <p>New: dynamic, rule-based playlists (at last!). Currently supporting filtering and sorting by song/album ratings, play count, skip count, URI components, tags and the like. Query results can be auto-refreshed. Everything happens client-side so you need not run anything extra on the server. Comes with a GUI editor with live error checking.</p>
+        <p>New: song ratings &amp; other myMPD-compatible sticker features.</p>
+        <p>Refactor: various UI tweaks &amp; performance optimisations. Notably: content views are now centered when in the mini-UI layout; song title marquees are now enabled for all song row widgets; the sort options widgets have been restyled to be in line with existing Libadwaita apps such as Nautilus.</p>
+        <p>Refactor: max background blur radius raised to 2048px to allow achieving a simple gradient-like look.</p>
+        <p>Refactor: reduced unnecessary async poll loops.</p>
+      </description>
+    </release>
     <release version="0.97.2-beta" date="2025-09-26">
       <url type="details">https://github.com/htkhiem/euphonica/releases/tag/v0.97.2-beta</url>
       <description>

@@ -9,6 +9,7 @@ use gtk::gdk;
 use lru::LruCache;
 use nohash_hasher::NoHashHasher;
 use once_cell::sync::Lazy;
+use rand::seq::SliceRandom;
 use time::OffsetDateTime;
 
 use mpd::{
@@ -1271,8 +1272,13 @@ pub fn fetch_dynamic_playlist(
         ).map(|raw| raw.into_iter().map(|t| (t.0, t.1.unwrap())).collect::<Vec<(SongInfo, Stickers)>>()) {
             if !songs_stickers.is_empty() {
                 // Sort the song list now
-                let cmp_func = build_comparator(&dp.ordering);
-                songs_stickers.sort_by(cmp_func);
+                if dp.ordering.len() == 1 && dp.ordering[0] == Ordering::Random {
+                    let mut rng = rand::rng();
+                    songs_stickers.shuffle(&mut rng);
+                } else {
+                    let cmp_func = build_comparator(&dp.ordering);
+                    songs_stickers.sort_by(cmp_func);
+                }
                 if let Some(limit) = dp.limit {
                     songs_stickers.truncate(limit as usize);
                 }
