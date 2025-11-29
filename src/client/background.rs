@@ -1254,7 +1254,7 @@ pub fn fetch_dynamic_playlist(
 
         // Then, fetch the tags and stickers needed for display and sorting.
         // These three are always needed for display.
-        let mut tagtypes: Vec<&'static str> = vec!["album", "artist", "albumartist"];
+        let mut tagtypes: Vec<&'static str> = vec!["title", "album", "artist", "albumartist"];
         for ordering in dp.ordering.iter() {
             match ordering {
                 Ordering::Track => {tagtypes.push("track");},
