@@ -23,7 +23,7 @@ impl TryFrom<i8> for Thumbs {
 
 // Our sticker schema
 // Largely follows myMPD's schema
-#[derive(Default, Debug)]
+#[derive(Default, Debug, Clone)]
 pub struct Stickers {
     pub rating: Option<i8>,
     pub like: Thumbs, // 0 = dislike, 1 = neutral, 2 = like
@@ -42,6 +42,25 @@ impl Stickers {
     pub const LAST_SKIPPED_KEY: &'static str = "lastSkipped";
     pub const PLAY_COUNT_KEY: &'static str = "playCount";
     pub const SKIP_COUNT_KEY: &'static str = "skipCount";
+
+    pub fn from_mpd_kv(kvs: Vec<(String, String)>) -> Self {
+        let mut res = Self::default();
+        for kv in kvs.iter() {
+            let val = kv.1.as_str();
+            match kv.0.as_str() {
+                Self::RATING_KEY => {res.set_rating(val);}
+                Self::LIKE_KEY => {res.set_like(val);}
+                Self::ELAPSED_KEY => {res.set_elapsed(val);}
+                Self::LAST_PLAYED_KEY => {res.set_last_played(val);}
+                Self::LAST_SKIPPED_KEY => {res.set_last_skipped(val);}
+                Self::PLAY_COUNT_KEY => {res.set_play_count(val);}
+                Self::SKIP_COUNT_KEY => {res.set_skip_count(val);}
+                _ => {}
+            }
+        }
+
+        res
+    }
 
     pub fn set_rating(&mut self, val: &str) {
         if let Ok(rating) = val.trim().parse::<i8>() {

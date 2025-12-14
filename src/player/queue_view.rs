@@ -14,9 +14,9 @@ use mpd::{
 
 use super::PlayerPane;
 
-use crate::{cache::Cache, common::Song, window::EuphonicaWindow, utils::LazyInit};
+use crate::{cache::Cache, client::ClientState, common::{RowEditButtons, Song, SongRow}, player::controller::SwapDirection, utils::LazyInit, window::EuphonicaWindow};
 
-use super::{Player, QueueRow};
+use super::Player;
 
 mod imp {
     use std::{cell::{Cell, OnceCell}, sync::OnceLock};
@@ -137,6 +137,23 @@ mod imp {
                     this.obj().emit_by_name::<()>("show-sidebar-clicked", &[]);
                 }
             ));
+
+            let action_clear_rating = gio::ActionEntry::builder("clear-rating")
+                .activate(clone!(
+                    #[weak]
+                    obj,
+                    move |_, _, _| {
+                        if let Some(player) = obj.imp().player.upgrade() {
+                            player.rate_current_song(None);
+                        }
+                    }
+                ))
+                .build();
+
+            // Create a new action group and add actions to it
+            let actions = gio::SimpleActionGroup::new();
+            actions.add_action_entries([action_clear_rating]);
+            self.obj().insert_action_group("queue-view", Some(&actions));
         }
 
         fn signals() -> &'static [Signal] {
@@ -155,7 +172,7 @@ mod imp {
 glib::wrapper! {
     pub struct QueueView(ObjectSubclass<imp::QueueView>)
         @extends gtk::Widget,
-        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget;
+        @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gio::ActionMap, gio::ActionGroup;
 }
 
 impl Default for QueueView {
@@ -168,12 +185,10 @@ fn format_song_count(count: u32) -> Option<String> {
     // TODO: translatable
     if count == 0 {
         Some(String::from("Empty"))
+    } else if count == 1 {
+        Some(String::from("1 song"))
     } else {
-        if count == 1 {
-            Some(String::from("1 song"))
-        } else {
-            Some(format!("{} songs", count))
-        }
+        Some(format!("{count} songs"))
     }
 }
 
@@ -182,7 +197,7 @@ impl QueueView {
         Self::default()
     }
 
-    pub fn setup_listview(&self, player: Player, cache: Rc<Cache>) {
+    pub fn setup_listview(&self, player: &Player, cache: Rc<Cache>) {
         // Enable/disable clear queue button depending on whether the queue is empty or not
         // Set selection mode
         // TODO: Allow click to jump to song
@@ -205,7 +220,6 @@ impl QueueView {
         // Set up factory
         let factory = SignalListItemFactory::new();
 
-        // Create an empty `QueueRow` during setup
         factory.connect_setup(clone!(
             #[weak]
             player,
@@ -215,29 +229,80 @@ impl QueueView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let queue_row = QueueRow::new(&item, player, cache);
-                item.set_child(Some(&queue_row));
+                let row = SongRow::new(Some(cache.clone()), Some(&player));
+                row.set_index_visible(false);
+                row.set_playing_indicator_visible(true);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("name")
+                    .bind(&row, "name", gtk::Widget::NONE);
+
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("album")
+                    .bind(&row, "first-attrib-text", gtk::Widget::NONE);
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                item.property_expression("item")
+                    .chain_property::<Song>("artist")
+                    .bind(&row, "second-attrib-text", gtk::Widget::NONE);
+
+                item.property_expression("item")
+                    .chain_property::<Song>("quality-grade")
+                    .bind(&row, "quality-grade", gtk::Widget::NONE);
+                let end_widget = RowEditButtons::new(
+                    item,
+                    // Raise action
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.swap_dir(idx, SwapDirection::Up);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.swap_dir(idx, SwapDirection::Down);
+                        }
+                    ),
+                    clone!(
+                        #[weak]
+                        player,
+                        #[upgrade_or]
+                        (),
+                        move |idx| {
+                            player.remove_pos(idx);
+                        }
+                    )
+                );
+                row.set_end_widget(Some(&end_widget.into()));
+                item.set_child(Some(&row));
             }
         ));
-        // Tell factory how to bind `QueueRow` to one of our Song GObjects
         factory.connect_bind(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, list_item| {
-                // Get `Song` from `ListItem` (that is, the data side)
-                let item: &ListItem = list_item
+                let item = list_item
                     .downcast_ref::<ListItem>()
-                    .expect("Needs to be ListItem");
-
-
-                // Get `QueueRow` from `ListItem` (the UI widget)
-                let child: QueueRow = item
+                    .expect("Needs to be ListItem")
+                    .item()
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a common::Song.");
+                let child = list_item
+                    .downcast_ref::<ListItem>()
+                    .expect("Needs to be ListItem")
                     .child()
-                    .and_downcast::<QueueRow>()
-                    .expect("The child has to be a `QueueRow`.");
+                    .and_downcast::<SongRow>()
+                    .expect("The child has to be a `SongRow`.");
 
                 // Within this binding fn is where the cached album art texture gets used.
-                child.bind(&item);
+                child.on_bind(&item);
 
                 this.imp().last_scroll_pos.set(this.imp().scrolled_window.vadjustment().value());
                 this.imp().restore_last_pos.set(2);
@@ -246,14 +311,13 @@ impl QueueView {
         // When row goes out of sight, unbind from item to allow reuse with another.
         // Remember to also unset the thumbnail widget's texture to potentially free it from memory.
         factory.connect_unbind(move |_, list_item| {
-            // Get `QueueRow` from `ListItem` (the UI widget)
-            let child: QueueRow = list_item
+            let child = list_item
                 .downcast_ref::<ListItem>()
                 .expect("Needs to be ListItem")
                 .child()
-                .and_downcast::<QueueRow>()
-                .expect("The child has to be a `QueueRow`.");
-            child.unbind();
+                .and_downcast::<SongRow>()
+                .expect("The child has to be a `SongRow`.");
+            child.on_unbind();
         });
 
         factory.connect_teardown(clone!(
@@ -271,14 +335,18 @@ impl QueueView {
         self.imp().queue.set_factory(Some(&factory));
 
         // Setup click action
-        self.imp().queue.connect_activate(move |queue, position| {
-            let model = queue.model().expect("The model has to exist.");
-            let song = model
-                .item(position)
-                .and_downcast::<Song>()
-                .expect("The item has to be a `common::Song`.");
-            player.on_song_clicked(song);
-        });
+        self.imp().queue.connect_activate(clone!(
+            #[weak]
+            player,
+            move |queue, position| {
+                let model = queue.model().expect("The model has to exist.");
+                let song = model
+                    .item(position)
+                    .and_downcast::<Song>()
+                    .expect("The item has to be a `common::Song`.");
+                player.on_song_clicked(song);
+            }
+        ));
     }
 
     fn show_save_error_dialog(&self, name: String, player: Player) {
@@ -378,16 +446,13 @@ impl QueueView {
                 let name = save_name.buffer().text().as_str().to_owned();
                 match player.save_queue(&name, SaveMode::Create) {
                     Ok(()) => {}
-                    Err(e) => match e {
-                        Some(MpdError::Server(ServerError {
+                    Err(e) => if let Some(MpdError::Server(ServerError {
                             code: MpdErrorCode::Exist,
                             pos: _,
                             command: _,
                             detail: _,
-                        })) => {
-                            this.show_save_error_dialog(name, player);
-                        }
-                        _ => {}
+                        })) = e {
+                        this.show_save_error_dialog(name, player);
                     },
                 }
             }
@@ -441,28 +506,20 @@ impl QueueView {
         ));
     }
 
-    pub fn setup(&self, player: Player, cache: Rc<Cache>, window: EuphonicaWindow) {
+    pub fn setup(&self, player: &Player, cache: Rc<Cache>, client_state: &ClientState, window: EuphonicaWindow) {
         let _ = self.imp().window.set(window);
-        self.setup_listview(player.clone(), cache);
-        self.imp().player_pane.setup(&player);
-        self.bind_state(&player);
-        self.imp().player.set(Some(&player));
+        self.setup_listview(player, cache);
+        self.imp().player_pane.setup(player, client_state);
+        self.bind_state(player);
+        self.imp().player.set(Some(player));
     }
 }
 
 impl LazyInit for QueueView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
         if let Some(player) = self.imp().player.upgrade() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising queue");
-                if let Some(status) = player.client().get_status(true) {
-                    player.update_status(&status);
-                }
+            if let Some(status) = player.client().get_status(true) {
+                player.update_status(&status);
             }
         }
     }

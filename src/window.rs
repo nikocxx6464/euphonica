@@ -21,14 +21,16 @@
 use crate::{
     application::EuphonicaApplication,
     client::{ClientError, ClientState, ConnectionState},
-    common::{blend_mode::*, paintables::FadePaintable, Album, Artist},
-    library::{AlbumView, ArtistContentView, ArtistView, FolderView, PlaylistView, RecentView},
+    common::{Album, Artist, INode, ThemeSelector, blend_mode::*, paintables::FadePaintable},
+    library::{
+        AlbumView, ArtistContentView, ArtistView, DynamicPlaylistView, FolderView, PlaylistView, RecentView
+    },
     player::{Player, PlayerBar, QueueView},
     sidebar::Sidebar,
     utils::{self, LazyInit, settings_manager},
 };
 use adw::{prelude::*, subclass::prelude::*, ColorScheme, StyleManager};
-use glib::signal::SignalHandlerId;
+use glib::{signal::SignalHandlerId, WeakRef};
 use gtk::{
     gdk, gio,
     glib::{self, clone, closure_local, BoxedAnyObject},
@@ -48,6 +50,16 @@ use async_channel::Sender;
 use glib::Properties;
 use image::ImageReader as Reader;
 
+// Blurred background logic. Runs in a background thread. Both interpretations are valid :)
+// Our asynchronous background switching algorithm is pretty simple: Player controller
+// sends paths of album arts (just strings) to this thread. It then loads the image from
+// disk as a DynamicImage (CPU-side, not GdkTextures, which are quickly dumped into VRAM),
+// blurs it using libblur, uploads to GPU and fades background to it.
+// In case more paths arrive as we are in the middle of processing one for fading, the loop
+// will come back to the async channel with many messages in it. In this case, pop and drop
+// all except the last, which we will process normally. This means quickly skipping songs
+// will not result in a rapidly-changing background - it will only change as quickly as it
+// can fade or the CPU can blur, whichever is slower.
 #[derive(Debug)]
 pub struct BlurConfig {
     width: u32,
@@ -100,19 +112,7 @@ pub enum WindowMessage {
     Stop,
 }
 
-// Blurred background logic. Runs in a background thread. Both interpretations are valid :)
-// Our asynchronous background switching algorithm is pretty simple: Player controller
-// sends paths of album arts (just strings) to this thread. It then loads the image from
-// disk as a DynamicImage (CPU-side, not GdkTextures, which are quickly dumped into VRAM),
-// blurs it using libblur, uploads to GPU and fades background to it.
-// In case more paths arrive as we are in the middle of processing one for fading, the loop
-// will come back to the async channel with many messages in it. In this case, pop and drop
-// all except the last, which we will process normally. This means quickly skipping songs
-// will not result in a rapidly-changing background - it will only change as quickly as it
-// can fade or the CPU can blur, whichever is slower.
 mod imp {
-    use crate::common::ThemeSelector;
-
     use super::*;
 
     #[derive(Debug, Default, Properties, gtk::CompositeTemplate)]
@@ -136,6 +136,8 @@ mod imp {
         #[template_child]
         pub folder_view: TemplateChild<FolderView>,
         #[template_child]
+        pub dyn_playlist_view: TemplateChild<DynamicPlaylistView>,
+        #[template_child]
         pub playlist_view: TemplateChild<PlaylistView>,
         #[template_child]
         pub queue_view: TemplateChild<QueueView>,
@@ -147,7 +149,6 @@ mod imp {
         #[template_child]
         pub stack: TemplateChild<gtk::Stack>,
         // Sidebar
-        // TODO: Replace with Libadwaita spinner when v1.6 hits stable
         #[template_child]
         pub busy_spinner: TemplateChild<adw::Spinner>,
         #[template_child]
@@ -172,7 +173,7 @@ mod imp {
         #[property(get, set)]
         pub bg_opacity: Cell<f64>,
         pub bg_paintable: FadePaintable,
-        pub player: OnceCell<Player>,
+        pub player: WeakRef<Player>,
         pub sender_to_bg: OnceCell<Sender<WindowMessage>>, // sending a None will terminate the thread
         pub bg_handle: OnceCell<gio::JoinHandle<()>>,
         pub prev_size: Cell<(u32, u32)>,
@@ -368,6 +369,7 @@ mod imp {
                 self.artist_view.upcast_ref::<gtk::Widget>(),
                 self.folder_view.upcast_ref::<gtk::Widget>(),
                 self.playlist_view.upcast_ref::<gtk::Widget>(),
+                self.dyn_playlist_view.upcast_ref::<gtk::Widget>(),
                 self.queue_view.upcast_ref::<gtk::Widget>()
             ].iter().for_each(clone!(
                 #[weak]
@@ -464,7 +466,7 @@ mod imp {
                                 if config.width > 0 && config.height > 0 {
                                     let _ = sender_to_fg.send_blocking(WindowMessage::Result(
                                         run_blur(data, &config),
-                                        Some(get_dominant_color(&data)),  // No need to update accent colour
+                                        Some(get_dominant_color(data)),  // No need to update accent colour
                                         config.fade,
                                     ));
                                 }
@@ -653,10 +655,8 @@ mod imp {
                 {
                     old_id.remove();
                 }
-            } else {
-                if let Some(old_id) = self.tick_callback.take() {
-                    old_id.remove();
-                }
+            } else if let Some(old_id) = self.tick_callback.take() {
+                old_id.remove();
             }
         }
 
@@ -683,8 +683,8 @@ mod imp {
                 // - No two points share the same x-coordinate (duh), and
                 // - X-coordinates are monotonically increasing
                 // we can cheat a bit and avoid having to solve for Beizer control points.
-                let half_width = band_width as f32 / 2.0;
-                let quarter_width = band_width as f32 / 4.0;
+                let half_width = band_width / 2.0;
+                let quarter_width = band_width / 4.0;
                 for i in 0..(data.len() - 1) {
                     let x = (i as f32 + 1.0) * band_width;
                     let y = (height - data[i] * scale * 1000000.0).max(0.0);
@@ -777,7 +777,7 @@ mod imp {
                     return (data.0.iter().sum::<f32>() + data.1.iter().sum::<f32>()) > 0.0;
                 }
             }
-            return false;
+            false
         }
 
         /// Fade to the new texture, or to nothing if playing song has no album art.
@@ -787,10 +787,8 @@ mod imp {
                 if !self.content.has_css_class("no-shading") {
                     self.content.add_css_class("no-shading");
                 }
-            } else {
-                if self.content.has_css_class("no-shading") {
-                    self.content.remove_css_class("no-shading");
-                }
+            } else if self.content.has_css_class("no-shading") {
+                self.content.remove_css_class("no-shading");
             }
             // Will immediately re-blur and upload to GPU at current size
             bg_paintable.set_new_content(tex);
@@ -853,7 +851,7 @@ impl EuphonicaWindow {
         win.restore_window_state();
         win.imp()
             .queue_view
-            .setup(app.get_player(), app.get_cache(), win.clone());
+            .setup(app.get_player(), app.get_cache(), &client_state, win.clone());
         win.imp().recent_view.setup(
             app.get_library(),
             app.get_player(),
@@ -863,26 +861,32 @@ impl EuphonicaWindow {
         win.imp().album_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             &win
         );
         win.imp().artist_view.setup(
             app.get_library(),
-            app.get_client().get_client_state(),
+            &app.get_client().get_client_state(),
             app.get_cache(),
         );
         win.imp().folder_view.setup(
             app.get_library(),
             app.get_cache()
         );
+        win.imp().dyn_playlist_view.setup(
+            app.get_library(),
+            app.get_cache(),
+            &app.get_client().get_client_state(),
+            &win,
+        );
         win.imp().playlist_view.setup(
             app.get_library(),
             app.get_cache(),
-            app.get_client().get_client_state(),
-            win.clone(),
+            &app.get_client().get_client_state(),
+            &win,
         );
         win.imp().sidebar.setup(&win, &app);
-        win.imp().player_bar.setup(&app.get_player());
+        win.imp().player_bar.setup(app.get_player());
 
         // Now that all the components are ready, we can start handling backend state changes
         win.imp()
@@ -909,11 +913,8 @@ impl EuphonicaWindow {
                 #[weak(rename_to = this)]
                 win,
                 move |_: ClientState, subsys: BoxedAnyObject| {
-                    match subsys.borrow::<Subsystem>().deref() {
-                        Subsystem::Database => {
-                            this.send_simple_toast("Database updated with changes", 3);
-                        }
-                        _ => {}
+                    if subsys.borrow::<Subsystem>().deref() == &Subsystem::Database {
+                        this.send_simple_toast("Database updated with changes", 3);
                     }
                 }
             ),
@@ -941,7 +942,7 @@ impl EuphonicaWindow {
                 }
             )
         );
-        let _ = win.imp().player.set(player);
+        win.imp().player.set(Some(player));
 
         win.imp().stack.connect_visible_child_name_notify(
             clone!(
@@ -985,6 +986,16 @@ impl EuphonicaWindow {
         win
     }
 
+    pub fn update_background_css_classes(&self) {
+        if self.imp().use_album_art_bg.get() || self.imp().use_visualizer.get() {
+            if !self.imp().content.has_css_class("no-shading") {
+                self.imp().content.add_css_class("no-shading");
+            }
+        } else if self.imp().content.has_css_class("no-shading") {
+            self.imp().content.remove_css_class("no-shading");
+        }
+    }
+
     pub fn get_stack(&self) -> gtk::Stack {
         self.imp().stack.get()
     }
@@ -1013,6 +1024,10 @@ impl EuphonicaWindow {
         self.imp().playlist_view.get()
     }
 
+    pub fn get_dyn_playlist_view(&self) -> DynamicPlaylistView {
+        self.imp().dyn_playlist_view.get()
+    }
+
     pub fn get_queue_view(&self) -> QueueView {
         self.imp().queue_view.get()
     }
@@ -1024,7 +1039,7 @@ impl EuphonicaWindow {
 
     fn show_error_dialog(&self, heading: &str, body: &str, suggest_open_preferences: bool) {
         // Show an alert ONLY IF the preferences dialog is not already open.
-        if !self.visible_dialog().is_some() {
+        if self.visible_dialog().is_none() {
             let diag = adw::AlertDialog::builder()
                 .heading(heading)
                 .body(body)
@@ -1115,12 +1130,6 @@ impl EuphonicaWindow {
                 let imp = self.imp();
                 imp.title.set_subtitle("Connecting");
                 imp.should_populate_visible.set(false);
-                // Player clears itself
-                imp.recent_view.clear();
-                imp.album_view.clear();
-                imp.artist_view.clear();
-                imp.folder_view.clear();
-                imp.queue_view.clear();
             }
             ConnectionState::Connected => {
                 let imp = self.imp();
@@ -1192,14 +1201,12 @@ impl EuphonicaWindow {
 
     fn goto_pane(&self) {
         self.imp().sidebar.set_view("queue");
-        // self.imp().stack.set_visible_child_name("queue");
         self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         self.imp().queue_view.set_show_content(true);
     }
 
     pub fn goto_album(&self, album: &Album) {
         self.imp().album_view.on_album_clicked(album);
-        // self.imp().stack.set_visible_child_name("albums");
         self.imp().sidebar.set_view("albums");
         if self.imp().split_view.shows_sidebar() {
             self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
@@ -1208,8 +1215,15 @@ impl EuphonicaWindow {
 
     pub fn goto_artist(&self, artist: &Artist) {
         self.imp().artist_view.on_artist_clicked(artist);
-        // self.imp().stack.set_visible_child_name("artists");
         self.imp().sidebar.set_view("artists");
+        if self.imp().split_view.shows_sidebar() {
+            self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
+        }
+    }
+
+    pub fn goto_playlist(&self, playlist: &INode) {
+        self.imp().playlist_view.on_playlist_clicked(playlist);
+        self.imp().sidebar.set_view("playlists");
         if self.imp().split_view.shows_sidebar() {
             self.imp().split_view.set_show_sidebar(!self.imp().split_view.is_collapsed());
         }
@@ -1218,11 +1232,10 @@ impl EuphonicaWindow {
     /// Set blurred background to a new image, if enabled. Use thumbnail version to
     /// minimise disk read time.
     fn queue_new_background(&self) {
-        if let Some(player) = self.imp().player.get() {
+        if let Some(player) = self.imp().player.upgrade() {
             if let Some(sender) = self.imp().sender_to_bg.get() {
                 if let Some(path) = player
-                    .current_song_cover_path(true)
-                    .map_or(None, |path| if path.exists() {Some(path)} else {None})
+                    .current_song_cover_path(true).and_then(|path| if path.exists() {Some(path)} else {None})
                 {
                     let settings = settings_manager().child("ui");
                     let config = BlurConfig {
@@ -1287,6 +1300,22 @@ impl EuphonicaWindow {
             .transform_to(|_, val: u64| Some(format!("Background task(s): {val}").to_value()))
             .sync_create()
             .build();
+
+        // Remove default libadwaita sidebar backgrounds when using
+        // album art as background, or the visualiser is enabled, or both.
+        self.connect_notify_local(
+            Some("use-album-art-as-background"),
+            move |win, _| {
+                win.update_background_css_classes();
+            }
+        );
+        self.connect_notify_local(
+            Some("use-visualizer"),
+            move |win, _| {
+                win.update_background_css_classes();
+            }
+        );
+        self.update_background_css_classes();
     }
 
     fn setup_signals(&self) {

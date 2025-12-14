@@ -1,4 +1,7 @@
-use std::{borrow::Cow, hash::BuildHasherDefault, num::NonZero, ops::Range, sync::Mutex};
+use std::{
+    borrow::Cow, cmp::Ordering as StdOrdering, hash::BuildHasherDefault, i64, num::NonZero, ops::Range, sync::Mutex
+};
+use chrono::{DateTime, Duration, Local};
 
 use async_channel::{SendError, Sender};
 use gio::prelude::SettingsExt;
@@ -6,6 +9,7 @@ use gtk::gdk;
 use lru::LruCache;
 use nohash_hasher::NoHashHasher;
 use once_cell::sync::Lazy;
+use rand::seq::SliceRandom;
 use time::OffsetDateTime;
 
 use mpd::{
@@ -14,7 +18,7 @@ use mpd::{
 };
 use rustc_hash::FxHashSet;
 
-use crate::{cache::{get_new_image_paths, sqlite}, common::SongInfo, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
+use crate::{cache::{get_new_image_paths, sqlite}, common::{dynamic_playlist::{Ordering, QueryLhs, Rule, StickerObjectType, StickerOperation}, SongInfo}, meta_providers::ProviderMessage, utils::{self, strip_filename_linux}};
 
 use super::*;
 
@@ -119,19 +123,17 @@ pub fn get_queue_changes(
                                 let mut song = cached_song.clone();
                                 song.queue_pos = Some(change.pos);
                                 song
+                            } else if let Ok(mut songs) = client.songs(change.id) {
+                                let song = SongInfo::from(std::mem::take(&mut songs[0]));
+                                cache.push(change.id.0, song.clone());
+                                song
                             } else {
-                                if let Ok(mut songs) = client.songs(change.id) {
-                                    let song = SongInfo::from(std::mem::take(&mut songs[0]));
-                                    cache.push(change.id.0, song.clone());
-                                    song
-                                } else {
-                                    // Queue has probably changed again. Push empty song &
-                                    // wait for next refresh.
-                                    let mut song = SongInfo::default();
-                                    song.queue_id = Some(change.id.0);
-                                    song.queue_pos = Some(change.pos);
-                                    song
-                                }
+                                // Queue has probably changed again. Push empty song &
+                                // wait for next refresh.
+                                let mut song = SongInfo::default();
+                                song.queue_id = Some(change.id.0);
+                                song.queue_pos = Some(change.pos);
+                                song
                             }
                         })
                         .collect();
@@ -160,28 +162,28 @@ fn download_embedded_cover_inner(
 ) -> Option<(gdk::Texture, gdk::Texture)> {
     if let Some(dyn_img) = client
         .readpicture(&uri)
-        .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
+        .map_or(None, utils::read_image_from_bytes)
     {
         let (hires, thumb) = utils::resize_convert_image(dyn_img);
         let (path, thumbnail_path) = get_new_image_paths();
         hires
             .save(&path)
-            .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
-        thumb.save(&thumbnail_path).expect(&format!(
-            "Couldn't save downloaded thumbnail cover to {:?}",
-            &thumbnail_path
-        ));
-        sqlite::register_cover_key(
-            &uri,
-            Some(path.file_name().unwrap().to_str().unwrap()),
+            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &path));
+        thumb.save(&thumbnail_path).unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}",
+            &thumbnail_path));
+        sqlite::register_image_key(
+            uri.clone(),
+            None,
+            Some(path.file_name().unwrap().to_str().unwrap().to_string()),
             false,
         )
         .join()
         .unwrap()
         .expect("Sqlite DB error");
-        sqlite::register_cover_key(
-            &uri,
-            Some(thumbnail_path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            uri.clone(),
+            None,
+            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()),
             true,
         )
         .join()
@@ -201,28 +203,28 @@ fn download_folder_cover_inner(
 ) -> Option<(gdk::Texture, gdk::Texture)> {
     if let Some(dyn_img) = client
         .albumart(&folder_uri)
-        .map_or(None, |bytes| utils::read_image_from_bytes(bytes))
+        .map_or(None, utils::read_image_from_bytes)
     {
         let (hires, thumb) = utils::resize_convert_image(dyn_img);
         let (path, thumbnail_path) = get_new_image_paths();
         hires
             .save(&path)
-            .expect(&format!("Couldn't save downloaded cover to {:?}", &path));
-        thumb.save(&thumbnail_path).expect(&format!(
-            "Couldn't save downloaded thumbnail cover to {:?}",
-            &thumbnail_path
-        ));
-        sqlite::register_cover_key(
-            &folder_uri,
-            Some(path.file_name().unwrap().to_str().unwrap()),
+            .unwrap_or_else(|_| panic!("Couldn't save downloaded cover to {:?}", &path));
+        thumb.save(&thumbnail_path).unwrap_or_else(|_| panic!("Couldn't save downloaded thumbnail cover to {:?}",
+            &thumbnail_path));
+        sqlite::register_image_key(
+            folder_uri.clone(),
+            None,
+            Some(path.file_name().unwrap().to_str().unwrap().to_string()),
             false,
         )
         .join()
         .unwrap()
         .expect("Sqlite DB error");
-        sqlite::register_cover_key(
-            &folder_uri,
-            Some(thumbnail_path.file_name().unwrap().to_str().unwrap()),
+        sqlite::register_image_key(
+            folder_uri.clone(),
+            None,
+            Some(thumbnail_path.file_name().unwrap().to_str().unwrap().to_string()),
             true,
         )
         .join()
@@ -249,7 +251,7 @@ pub fn download_embedded_cover(
     // in case the folder has been deleted, only thumbnail records in the SQLite DB will be
     // dropped. Checking with thumbnail=true will still return a path even though that
     // path has already been deleted, preventing downloading from proceeding.
-    let folder_path = sqlite::find_cover_by_key(&folder_uri, true).expect("Sqlite DB error");
+    let folder_path = sqlite::find_image_by_key(&folder_uri, None, true).expect("Sqlite DB error");
     if folder_path.is_none() {
         if let Some((hires_tex, thumb_tex)) =
             download_folder_cover_inner(client, folder_uri.clone())
@@ -266,13 +268,13 @@ pub fn download_embedded_cover(
                 .expect("Cannot notify main cache of folder cover download result.");
             return;
         } // No folder-level art was available. Proceed to actually fetch embedded art.
-    } else if folder_path.as_ref().map_or(false, |p| p.len() > 0) {
+    } else if folder_path.as_ref().is_some_and(|p| !p.is_empty()) {
         // Nothing to do, as there's already a path in the DB.
         return;
     }
     // Re-check in case previous iterations have already downloaded these.
     let uri = key.uri.to_owned();
-    if sqlite::find_cover_by_key(&uri, true)
+    if sqlite::find_image_by_key(&uri, None, true)
         .expect("Sqlite DB error")
         .is_none()
     {
@@ -305,7 +307,6 @@ pub fn download_embedded_cover(
             .expect("Cannot notify main cache of embedded cover download result.");
     } else {
         // Nothing to do, as there's already a path in the DB
-        return;
     }
 }
 
@@ -315,7 +316,7 @@ pub fn download_folder_cover(
     key: AlbumInfo,
 ) {
     // Re-check in case previous iterations have already downloaded these.
-    if sqlite::find_cover_by_key(&key.folder_uri, true)
+    if sqlite::find_image_by_key(&key.folder_uri, None, true)
         .expect("Sqlite DB error")
         .is_none()
     {
@@ -340,7 +341,7 @@ pub fn download_folder_cover(
         } else {
             // Fall back to embedded art.
             let uri = key.example_uri.to_owned();
-            let sqlite_path = sqlite::find_cover_by_key(&uri, true).expect("Sqlite DB error");
+            let sqlite_path = sqlite::find_image_by_key(&uri, None, true).expect("Sqlite DB error");
             if sqlite_path.is_none() {
                 if let Some((hires_tex, thumb_tex)) =
                     download_embedded_cover_inner(client, uri.clone())
@@ -357,7 +358,7 @@ pub fn download_folder_cover(
                         .expect("Cannot notify main cache of embedded fallback download result.");
                     return;
                 }
-            } else if sqlite_path.as_ref().map_or(false, |p| p.len() > 0) {
+            } else if sqlite_path.as_ref().is_some_and(|p| !p.is_empty()) {
                 // Nothing to do, as there's already a path in the DB.
                 return;
             }
@@ -419,9 +420,9 @@ where
 fn fetch_songs_by_query<F>(
     client: &mut mpd::Client<stream::StreamWrapper>,
     query: &Query,
-    respond: F,
+    mut respond: F,
 ) where
-    F: Fn(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
+    F: FnMut(Vec<SongInfo>) -> Result<(), SendError<AsyncClientMessage>>,
 {
     let mut curr_len: usize = 0;
     let mut more: bool = true;
@@ -444,6 +445,76 @@ fn fetch_songs_by_query<F>(
             }
             Err(e) => {
                 dbg!(e);
+                more = false;
+            }
+        }
+    }
+}
+
+fn fetch_uris_by_sticker<F>(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    obj: StickerObjectType,
+    sticker: &str,
+    op: StickerOperation,
+    rhs: &str,
+    only_in: Option<&str>,
+    mut respond: F,
+) where
+    F: FnMut(Vec<String>) -> Result<(), SendError<AsyncClientMessage>>,
+{
+    let mut curr_len: usize = 0;
+    let mut more: bool = true;
+    while more && (curr_len) < FETCH_LIMIT {
+        match client.find_sticker_op(
+            obj.to_str(), only_in.unwrap_or(""), sticker, op.to_mpd_syntax(), rhs,
+            Window::from((curr_len as u32, (curr_len + BATCH_SIZE) as u32))
+        ) {
+            Ok(names) => {
+                if !names.is_empty() {
+                    // If not searching directly by song (for example by album rating), further resolve to URI.
+                    match obj {
+                        StickerObjectType::Song => {
+                            // In this case the names are the URIs themselves
+                            let _ = respond(names);
+                            curr_len += BATCH_SIZE;
+                        }
+                        StickerObjectType::Playlist => {
+                            // Fetch playlist contents
+                            for playlist_name in names.iter() {
+                                fetch_playlist_songs_internal(
+                                    client,
+                                    playlist_name,
+                                    |batch| {
+                                        let _ = respond(batch.into_iter().map(|song| song.uri).collect());
+                                    },
+                                    |_| {}
+                                );
+                            }
+                        }
+                        tag_type => {
+                            let tag_type_str = tag_type.to_str();
+                            // Fetch all songs for each tag
+                            for tag_value in names.iter() {
+                                let mut query = Query::new();
+                                query.and(Term::Tag(Cow::Borrowed(tag_type_str)), tag_value);
+                                fetch_songs_by_query(
+                                    client,
+                                    &query,
+                                    |batch| {
+                                        respond(batch.into_iter().map(|song| song.uri).collect())
+                                    }
+                                );
+                            }
+                        }
+                    }
+                    curr_len += BATCH_SIZE;
+                } else {
+                    more = false;
+                }
+            }
+            Err(e) => {
+                dbg!(e);
+                more = false;
             }
         }
     }
@@ -454,13 +525,10 @@ pub fn fetch_all_albums(
     client: &mut mpd::Client<stream::StreamWrapper>,
     sender_to_fg: &Sender<AsyncClientMessage>,
 ) {
-    match fetch_albums_by_query(client, &Query::new(), |info| {
+    if let Err(mpd_error) = fetch_albums_by_query(client, &Query::new(), |info| {
         sender_to_fg.send_blocking(AsyncClientMessage::AlbumBasicInfoDownloaded(info))
     }) {
-        Err(mpd_error) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-        }
-        _ => {}
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
     }
 }
 
@@ -480,13 +548,10 @@ pub fn fetch_recent_albums(
         if let Some(mbid) = tup.2 {
             query.and(Term::Tag(Cow::Borrowed("musicbrainz_albumid")), mbid);
         }
-        match fetch_albums_by_query(client, &query, |info| {
+        if let Err(mpd_error) = fetch_albums_by_query(client, &query, |info| {
             sender_to_fg.send_blocking(AsyncClientMessage::RecentAlbumDownloaded(info))
         }) {
-            Err(mpd_error) => {
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-            }
-            _ => {}
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
         }
     }
 }
@@ -496,7 +561,7 @@ pub fn fetch_albums_of_artist(
     sender_to_fg: &Sender<AsyncClientMessage>,
     artist_name: String,
 ) {
-    match fetch_albums_by_query(
+    if let Err(mpd_error) = fetch_albums_by_query(
         client,
         Query::new().and_with_op(
             Term::Tag(Cow::Borrowed("artist")),
@@ -510,10 +575,7 @@ pub fn fetch_albums_of_artist(
             ))
         },
     ) {
-        Err(mpd_error) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
-        }
-        _ => {}
+        let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
     }
 }
 
@@ -606,11 +668,10 @@ pub fn fetch_recent_artists(
                     let first_song = SongInfo::from(std::mem::take(&mut songs[0]));
                     let artists = first_song.into_artist_infos();
                     for artist in artists.into_iter() {
-                        if recent_names_set.contains(&artist.name) {
-                            if already_parsed.insert(artist.name.clone()) {
+                        if recent_names_set.contains(&artist.name)
+                            && already_parsed.insert(artist.name.clone()) {
                                 res.push(artist);
                             }
-                        }
                     }
                 }
             }
@@ -665,26 +726,25 @@ pub fn fetch_folder_contents(
     }
 }
 
-pub fn fetch_playlist_songs(
+fn fetch_playlist_songs_internal<G: Fn(MpdError), F: FnMut(Vec<SongInfo>)> (
     client: &mut mpd::Client<stream::StreamWrapper>,
-    sender_to_fg: &Sender<AsyncClientMessage>,
-    name: String,
+    name: &str,
+    mut respond: F,
+    on_error: G
 ) {
     if client.version.1 < 24 {
-        match client.playlist(&name, Option::<Range<u32>>::None) {
+        match client.playlist(name, Option::<Range<u32>>::None) {
             Ok(mut mpd_songs) => {
                 let songs: Vec<SongInfo> = mpd_songs
                     .iter_mut()
                     .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
                     .collect();
                 if !songs.is_empty() {
-                    let _ = sender_to_fg.send_blocking(
-                        AsyncClientMessage::PlaylistSongInfoDownloaded(name.clone(), songs),
-                    );
+                    respond(songs);
                 }
             }
             Err(mpd_error) => {
-                let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+                on_error(mpd_error);
             }
         }
     } else {
@@ -692,38 +752,65 @@ pub fn fetch_playlist_songs(
         let mut curr_len: u32 = 0;
         let mut more: bool = true;
         while more && (curr_len as usize) < FETCH_LIMIT {
-            match client.playlist(&name, Some(curr_len..(curr_len + BATCH_SIZE as u32))) {
+            match client.playlist(name, Some(curr_len..(curr_len + BATCH_SIZE as u32))) {
                 Ok(mut mpd_songs) => {
                     let songs: Vec<SongInfo> = mpd_songs
                         .iter_mut()
                         .map(|mpd_song| SongInfo::from(std::mem::take(mpd_song)))
                         .collect();
-                    more = songs.len() >= BATCH_SIZE as usize;
+                    more = songs.len() >= BATCH_SIZE;
                     if !songs.is_empty() {
                         curr_len += songs.len() as u32;
-                        let _ = sender_to_fg.send_blocking(
-                            AsyncClientMessage::PlaylistSongInfoDownloaded(name.clone(), songs),
-                        );
+                        respond(songs);
                     }
                 }
                 Err(mpd_error) => {
-                    let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+                    on_error(mpd_error);
                 }
             }
         }
     }
 }
 
+pub fn fetch_playlist_songs(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: String,
+) {
+    fetch_playlist_songs_internal(
+        client,
+        &name,
+        |songs| {
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::PlaylistSongInfoDownloaded(name.clone(), songs),
+            );
+        },
+        |mpd_error| {
+            let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, None));
+        }
+    );
+}
+
 pub fn fetch_songs_by_uri(
     client: &mut mpd::Client<stream::StreamWrapper>,
     uris: &[&str],
-) -> Result<Vec<SongInfo>, MpdError> {
-    let mut res: Vec<mpd::Song> = Vec::with_capacity(uris.len());
+    fetch_stickers: bool
+) -> Result<Vec<(SongInfo, Option<Stickers>)>, MpdError> {
+    let mut res: Vec<(SongInfo, Option<Stickers>)> = Vec::with_capacity(uris.len());
     for uri in uris.iter() {
         match client.find(Query::new().and(Term::File, *uri), None) {
             Ok(mut found_songs) => {
-                if found_songs.len() > 0 {
-                    res.push(found_songs.remove(0));
+                if !found_songs.is_empty() {
+                    let song = SongInfo::from(std::mem::take(&mut found_songs[0]));
+                    if fetch_stickers {
+                        // Assume stickers are supported as all paths that call this function
+                        // are only accessible via UI when that's the case.
+                        res.push((
+                            song, client.stickers("song", uri).ok().map(Stickers::from_mpd_kv)
+                        ));
+                    } else {
+                        res.push((song, None));
+                    }
                 }
             }
             Err(mpd_error) => {
@@ -732,11 +819,7 @@ pub fn fetch_songs_by_uri(
         }
     }
 
-    Ok(res
-        .into_iter()
-        .map(|mut mpd_song| SongInfo::from(std::mem::take(&mut mpd_song)))
-        .collect()
-    )
+    Ok(res)
 }
 
 pub fn fetch_last_n_songs(
@@ -752,10 +835,12 @@ pub fn fetch_last_n_songs(
             .iter()
             .map(|tup| tup.0.as_str())
             .collect::<Vec<&str>>(),
+        false
     ) {
         Ok(raw_songs) => {
             let songs: Vec<SongInfo> = raw_songs
                 .into_iter()
+                .map(|pair| pair.0)
                 .zip(
                     to_fetch
                         .iter()
@@ -829,13 +914,22 @@ pub fn add_multi(
         return;
     }
     let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
-    let mut res: Result<(), MpdError>;
+    let mut res: Result<(), MpdError> = Ok(());
     if uris.len() > 1 {
-        res = if let Some(pos) = insert_pos {
-            client.insert_multiple(uris, pos as usize).map(|_| ())
-        } else {
-             client.push_multiple(uris).map(|_| ())
-        };
+        // Batch by batch to avoid holding the server up too long (and timing out)
+        let mut inserted: usize = 0;
+        while inserted < uris.len() {
+            let to_insert = (uris.len() - inserted).min(BATCH_SIZE);
+            res = if let Some(pos) = insert_pos {
+                client.insert_multiple(&uris[inserted..(inserted + to_insert)], pos as usize + inserted).map(|_| ())
+            } else {
+                client.push_multiple(&uris[inserted..(inserted + to_insert)]).map(|_| ())
+            };
+            inserted += to_insert;
+            if res.is_err() {
+                break;
+            }
+        }
     } else {
         res = if recursive {
             // TODO: support inserting at specific location in queue
@@ -856,9 +950,6 @@ pub fn add_multi(
     match res {
         Ok(()) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
-        }
-        Err(MpdError::Io(_)) => {
-            let _ = sender_to_fg.send_blocking(AsyncClientMessage::Connect);
         }
         Err(mpd_error) => {
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
@@ -892,4 +983,379 @@ pub fn load_playlist(
             let _ = sender_to_fg.send_blocking(AsyncClientMessage::BackgroundError(mpd_error, Some(ClientError::Queuing)));
         }
     }
+}
+
+fn get_past_unix_timestamp(backoff: i64) -> i64 {
+    let current_local_dt: DateTime<Local> = Local::now();
+    let backoff_dur: Duration = Duration::seconds(backoff);
+    current_local_dt.checked_sub_signed(backoff_dur).unwrap().timestamp()
+}
+
+fn resolve_dynamic_playlist_rules(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    rules: Vec<Rule>
+) ->Vec<String> {
+    // Resolve into concrete URIs.
+    // First, separate the search query-based conditions from the sticker ones.
+    let mut query_clauses: Vec<(QueryLhs, String)> = Vec::new();
+    let mut sticker_clauses: Vec<(StickerObjectType, String, StickerOperation, String)> = Vec::new();
+    for rule in rules.into_iter() {
+        println!("{rule:?}");
+        match rule {
+            Rule::Sticker(obj, key, op, rhs) => {
+                sticker_clauses.push((obj, key, op, rhs));
+            }
+            Rule::Query(lhs, rhs) => {
+                query_clauses.push((lhs, rhs));
+            }
+            Rule::LastModified(secs) => {
+                // Special case: query current system datetime
+                query_clauses.push((QueryLhs::LastMod, get_past_unix_timestamp(secs).to_string()));
+            }
+        }
+    }
+    let mut res: FxHashSet<String> = FxHashSet::default();
+    let mut mpd_query = Query::new();
+    if !query_clauses.is_empty() {
+        for (lhs, rhs) in query_clauses.into_iter() {
+            lhs.add_to_query(&mut mpd_query, rhs);
+        }
+    } else {
+        // Dummy term that basically matches everything.
+        mpd_query.and(Term::AddedSince, i64::MIN.to_string());
+    }
+    fetch_songs_by_query(client, &mpd_query, |batch| {
+        for song in batch.into_iter() {
+            res.insert(song.uri);
+        }
+        Ok(())
+    });
+    println!("Length after query_clauses: {}", res.len());
+
+    // Get matching URIs for each sticker condition
+    // TODO: Optimise sticker operations by limiting to any found URI query clause.
+    for clause in sticker_clauses.into_iter() {
+        let mut set = FxHashSet::default();
+        match clause.1.as_str() {
+            Stickers::LAST_PLAYED_KEY | Stickers::LAST_SKIPPED_KEY => {
+                // Special case: treat RHS as relative to current time
+                fetch_uris_by_sticker(
+                    client,
+                    clause.0,
+                    &clause.1,
+                    clause.2,
+                    &get_past_unix_timestamp(clause.3.parse::<i64>().unwrap()).to_string(),
+                    None,
+                    |batch| {
+                        for uri in batch.into_iter() {
+                            set.insert(uri);
+                        }
+                        Ok(())
+                    }
+                );
+            }
+            _ => {
+                fetch_uris_by_sticker(
+                    client,
+                    clause.0,
+                    &clause.1,
+                    clause.2,
+                    &clause.3,
+                    None,
+                    |batch| {
+                        for uri in batch.into_iter() {
+                            set.insert(uri);
+                        }
+                        Ok(())
+                    }
+                );
+            }
+        }
+
+        println!("Length of matches of sticker_clause: {}", set.len());
+        res.retain(move |elem| {set.contains(elem)});
+        if res.is_empty() {
+            // Return early
+            return Vec::with_capacity(0);
+        }
+        println!("Length afterwards: {}", res.len());
+    }
+
+    res.into_iter().collect()
+}
+
+fn cmp_options_nulls_last<T: Ord>(
+    a: Option<&T>,
+    b: Option<&T>
+) -> StdOrdering {
+    match (a, b) {
+        (Some(val_a), Some(val_b)) => {
+            val_a.cmp(val_b)
+        }
+        (Some(_), None) => StdOrdering::Less,
+        (None, Some(_)) => StdOrdering::Greater,
+        (None, None) => StdOrdering::Equal,
+    }
+}
+
+// Reverse comparison, but still putting nulls last
+fn reverse_cmp_options_nulls_last<T: Ord>(
+    a: Option<&T>,
+    b: Option<&T>
+) -> StdOrdering {
+    match (a, b) {
+        (Some(val_a), Some(val_b)) => {
+            val_a.cmp(val_b).reverse()
+        }
+        (Some(_), None) => StdOrdering::Less,
+        (None, Some(_)) => StdOrdering::Greater,
+        (None, None) => StdOrdering::Equal,
+    }
+}
+
+/// Build and return a dynamic comparator closure.
+///
+/// This is highly efficient because the logic for choosing which fields to compare
+/// is determined *once* when this function is called.
+pub fn build_comparator(orderings: &[Ordering]) -> Box<dyn Fn(&(SongInfo, Stickers), &(SongInfo, Stickers)) -> StdOrdering> {
+    let orderings = orderings.to_vec();
+    Box::new(move |a: &(SongInfo, Stickers), b: &(SongInfo, Stickers)| -> StdOrdering {
+        let song_a = &a.0;
+        let stickers_a = &a.1;
+        let song_b = &b.0;
+        let stickers_b = &b.1;
+        for ordering in &orderings {
+            // Determine the ordering for the current rule's field.
+            // Nulls are always sorted last as it wouldn't really make sense otherwise in
+            // the dynamic playlist/all songs view cases.
+            let res = match *ordering {
+                Ordering::AscAlbumTitle => {
+                    cmp_options_nulls_last(
+                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title)
+                    )
+                }
+                Ordering::DescAlbumTitle => {
+                    reverse_cmp_options_nulls_last(
+                        song_a.album.as_ref().map(|album: &AlbumInfo| &album.title),
+                        song_b.album.as_ref().map(|album: &AlbumInfo| &album.title)
+                    )
+                }
+                Ordering::Track => {
+                    // Since nulls are -1, replace them with i64::MAX instead.
+                    let mut track_a = song_a.track.get();
+                    if track_a < 0 {
+                        track_a = i64::MAX;
+                    }
+                    let mut track_b = song_b.track.get();
+                    if track_b < 0 {
+                        track_b = i64::MAX;
+                    }
+                    track_a.cmp(&track_b)
+                }
+                Ordering::AscReleaseDate => {
+                    cmp_options_nulls_last(
+                        song_a.release_date.as_ref(),
+                        song_b.release_date.as_ref()
+                    )
+                }
+                Ordering::DescReleaseDate => {
+                    reverse_cmp_options_nulls_last(
+                        song_a.release_date.as_ref(),
+                        song_b.release_date.as_ref()
+                    )
+                }
+                Ordering::AscArtistTag => {
+                    cmp_options_nulls_last(
+                        song_a.artist_tag.as_ref(),
+                        song_b.artist_tag.as_ref(),
+                    )
+                }
+                Ordering::DescArtistTag => {
+                    reverse_cmp_options_nulls_last(
+                        song_a.artist_tag.as_ref(),
+                        song_b.artist_tag.as_ref(),
+                    )
+                }
+                Ordering::AscRating => {
+                    cmp_options_nulls_last(
+                        stickers_a.rating.as_ref(),
+                        stickers_b.rating.as_ref(),
+                    )
+                }
+                Ordering::DescRating => {
+                    reverse_cmp_options_nulls_last(
+                        stickers_a.rating.as_ref(),
+                        stickers_b.rating.as_ref(),
+                    )
+                }
+                Ordering::AscLastModified => {
+                    cmp_options_nulls_last(
+                        song_a.last_modified.as_ref(),
+                        song_b.last_modified.as_ref(),
+                    )
+                }
+                Ordering::DescLastModified => {
+                    reverse_cmp_options_nulls_last(
+                        song_a.last_modified.as_ref(),
+                        song_b.last_modified.as_ref(),
+                    )
+                }
+                Ordering::AscPlayCount => {
+                    cmp_options_nulls_last(
+                        stickers_a.play_count.as_ref(),
+                        stickers_b.play_count.as_ref(),
+                    )
+                }
+                Ordering::DescPlayCount => {
+                    reverse_cmp_options_nulls_last(
+                        stickers_a.play_count.as_ref(),
+                        stickers_b.play_count.as_ref(),
+                    )
+                }
+                Ordering::AscSkipCount => {
+                    cmp_options_nulls_last(
+                        stickers_a.skip_count.as_ref(),
+                        stickers_b.skip_count.as_ref(),
+                    )
+                }
+                Ordering::DescSkipCount => {
+                    reverse_cmp_options_nulls_last(
+                        stickers_a.skip_count.as_ref(),
+                        stickers_b.skip_count.as_ref(),
+                    )
+                }
+                Ordering::Random => unreachable!()
+            };
+
+            if res != StdOrdering::Equal {
+                return res;
+            }
+            // If equal, fall through to next rule
+        }
+
+        // If all rules resulted in equality, the items are considered equal.
+        std::cmp::Ordering::Equal
+    })
+}
+
+
+pub fn fetch_dynamic_playlist(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    dp: DynamicPlaylist,
+    cache: bool  // If true, will cache resolved song URIs locally
+) {
+    // To reduce server & connection burden, temporarily turn off all tags in responses.
+    if client.tagtypes_clear().is_ok() {
+        let name = dp.name.to_owned();
+        // First, fetch just the URIs, without any sorting
+        let uris = resolve_dynamic_playlist_rules(client, dp.rules);
+
+        // Then, fetch the tags and stickers needed for display and sorting.
+        // These three are always needed for display.
+        let mut tagtypes: Vec<&'static str> = vec!["title", "album", "artist", "albumartist"];
+        for ordering in dp.ordering.iter() {
+            match ordering {
+                Ordering::Track => {tagtypes.push("track");},
+                Ordering::AscReleaseDate | Ordering::DescReleaseDate => {tagtypes.push("originaldate");}
+                _ => {
+                    // the rest are either Random, always included (LastModified), or stickers-based
+                }
+            }
+        }
+        client.tagtypes_enable(tagtypes).expect("Unable to enable the needed tag types to order the dynamic playlist");
+        if let Ok(mut songs_stickers) = fetch_songs_by_uri(
+            client,
+            &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
+            true
+        ).map(|raw| raw.into_iter().map(|t| (t.0, t.1.unwrap())).collect::<Vec<(SongInfo, Stickers)>>()) {
+            if !songs_stickers.is_empty() {
+                // Sort the song list now
+                if dp.ordering.len() == 1 && dp.ordering[0] == Ordering::Random {
+                    let mut rng = rand::rng();
+                    songs_stickers.shuffle(&mut rng);
+                } else {
+                    let cmp_func = build_comparator(&dp.ordering);
+                    songs_stickers.sort_by(cmp_func);
+                }
+                if let Some(limit) = dp.limit {
+                    songs_stickers.truncate(limit as usize);
+                }
+                let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+                if cache {
+                    if let Err(db_err) = sqlite::cache_dynamic_playlist_results(&dp.name, &songs) {
+                        println!("Failed to cache DP query result. Queuing will be incorrect!");
+                        dbg!(db_err);
+                    }
+                }
+
+                let mut curr_len: usize = 0;
+                let songs_len = songs.len();
+                while curr_len < songs_len {
+                    let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+                    let _ = sender_to_fg.send_blocking(
+                        AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), songs[curr_len..next_len].to_vec())
+                    );
+                    curr_len = next_len;
+                }
+            }
+            // Send once more w/ an empty list to signal end-of-result
+            println!("Sending end-of-response");
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.clone(), Vec::new())
+            );
+        }
+        client.tagtypes_all().expect("Cannot restore tagtypes");
+    }
+}
+
+pub fn fetch_dynamic_playlist_cached(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: &str
+) {
+    if let Some(songs_stickers) = sqlite::get_cached_dynamic_playlist_results(name).ok().and_then(|uris| fetch_songs_by_uri(
+            client,
+            &uris.iter().map(String::as_str).collect::<Vec<&str>>(),
+            false
+        ).ok()) {
+        let songs: Vec<SongInfo> = songs_stickers.into_iter().map(|tup| tup.0).collect();
+        let mut curr_len: usize = 0;
+        let songs_len = songs.len();
+        while curr_len < songs_len {
+            let next_len = (curr_len + BATCH_SIZE).min(songs_len);
+            let _ = sender_to_fg.send_blocking(
+                AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.to_string(), songs[curr_len..next_len].to_vec())
+            );
+            curr_len = next_len;
+        }
+
+        // Send once more w/ an empty list to signal end-of-result
+        println!("Sending end-of-response");
+        let _ = sender_to_fg.send_blocking(
+            AsyncClientMessage::DynamicPlaylistSongInfoDownloaded(name.to_string(), Vec::new())
+        );
+    }
+}
+
+pub fn queue_cached_dynamic_playlist(
+    client: &mut mpd::Client<stream::StreamWrapper>,
+    sender_to_fg: &Sender<AsyncClientMessage>,
+    name: &str,
+    play: bool
+) {
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(true));
+    if let Ok(uris) = sqlite::get_cached_dynamic_playlist_results(name) {
+        add_multi(
+            client,
+            sender_to_fg,
+            &uris,
+            false,
+            if play {Some(0)} else {None},
+            None
+        );
+    }
+
+    let _ = sender_to_fg.send_blocking(AsyncClientMessage::Queuing(false));
 }

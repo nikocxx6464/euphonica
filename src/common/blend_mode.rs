@@ -48,25 +48,25 @@ impl TryFrom<u32> for BlendMode {
     }
 }
 
-impl Into<u32> for BlendMode {
-    fn into(self) -> u32 {
-        match self {
-            Self::Default => 0,
-            Self::Multiply => 1,
-            Self::Screen => 2,
-            Self::Overlay => 3,
-            Self::Darken => 4,
-            Self::Lighten => 5,
-            Self::Dodge => 6,
-            Self::Burn => 7,
-            Self::HardLight => 8,
-            Self::SoftLight => 9,
-            Self::Difference => 10,
-            Self::Exclusion => 11,
-            Self::Color => 12,
-            Self::Hue => 13,
-            Self::Saturation => 14,
-            Self::Luminosity => 15,
+impl From<BlendMode> for u32 {
+    fn from(val: BlendMode) -> Self {
+        match val {
+            BlendMode::Default => 0,
+            BlendMode::Multiply => 1,
+            BlendMode::Screen => 2,
+            BlendMode::Overlay => 3,
+            BlendMode::Darken => 4,
+            BlendMode::Lighten => 5,
+            BlendMode::Dodge => 6,
+            BlendMode::Burn => 7,
+            BlendMode::HardLight => 8,
+            BlendMode::SoftLight => 9,
+            BlendMode::Difference => 10,
+            BlendMode::Exclusion => 11,
+            BlendMode::Color => 12,
+            BlendMode::Hue => 13,
+            BlendMode::Saturation => 14,
+            BlendMode::Luminosity => 15,
         }
     }
 }
@@ -94,25 +94,25 @@ impl From<gsk::BlendMode> for BlendMode {
     }
 }
 
-impl Into<gsk::BlendMode> for BlendMode {
-    fn into(self) -> gsk::BlendMode {
-        match self {
-            Self::Default => gsk::BlendMode::Default,
-            Self::Multiply => gsk::BlendMode::Multiply,
-            Self::Screen => gsk::BlendMode::Screen,
-            Self::Overlay => gsk::BlendMode::Overlay,
-            Self::Darken => gsk::BlendMode::Darken,
-            Self::Lighten => gsk::BlendMode::Lighten,
-            Self::Dodge => gsk::BlendMode::ColorDodge,
-            Self::Burn => gsk::BlendMode::ColorBurn,
-            Self::HardLight => gsk::BlendMode::HardLight,
-            Self::SoftLight => gsk::BlendMode::SoftLight,
-            Self::Difference => gsk::BlendMode::Difference,
-            Self::Exclusion => gsk::BlendMode::Exclusion,
-            Self::Color => gsk::BlendMode::Color,
-            Self::Hue => gsk::BlendMode::Hue,
-            Self::Saturation => gsk::BlendMode::Saturation,
-            Self::Luminosity => gsk::BlendMode::Luminosity,
+impl From<BlendMode> for gsk::BlendMode {
+    fn from(val: BlendMode) -> Self {
+        match val {
+            BlendMode::Default => gsk::BlendMode::Default,
+            BlendMode::Multiply => gsk::BlendMode::Multiply,
+            BlendMode::Screen => gsk::BlendMode::Screen,
+            BlendMode::Overlay => gsk::BlendMode::Overlay,
+            BlendMode::Darken => gsk::BlendMode::Darken,
+            BlendMode::Lighten => gsk::BlendMode::Lighten,
+            BlendMode::Dodge => gsk::BlendMode::ColorDodge,
+            BlendMode::Burn => gsk::BlendMode::ColorBurn,
+            BlendMode::HardLight => gsk::BlendMode::HardLight,
+            BlendMode::SoftLight => gsk::BlendMode::SoftLight,
+            BlendMode::Difference => gsk::BlendMode::Difference,
+            BlendMode::Exclusion => gsk::BlendMode::Exclusion,
+            BlendMode::Color => gsk::BlendMode::Color,
+            BlendMode::Hue => gsk::BlendMode::Hue,
+            BlendMode::Saturation => gsk::BlendMode::Saturation,
+            BlendMode::Luminosity => gsk::BlendMode::Luminosity,
         }
     }
 }

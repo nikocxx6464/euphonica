@@ -8,69 +8,58 @@ An MPD frontend with delusions of grandeur.
 It exists to sate my need for something that's got the bling and the features to back that bling up.
 
 ## Features
-- Responsive GTK4 LibAdwaita UI for most MPD features, from basic things like playback controls, queue reordering and ReplayGain to things like output control, crossfade and MixRamp configuration
-- Automatically fetch album arts, artist avatars and (synced) song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB). All externally-acquired metadata are cached locally & persisted on disk to avoid needless API calls.
-- Built-in, customisable spectrum visualiser, reading from MPD FIFO or system PipeWire
-- Automatic accent colours based on album art (optional)
+- Adaptive GTK4+`libadwaita` UI for most MPD features, from queue reordering and ReplayGain to crossfade and MixRamp configuration.
+- Practically **zero-cost** static background blur powered by [libblur](https://github.com/awxkee/libblur). Go ham with blur radius!
+- Customisable spectrum visualiser, reading from MPD FIFO or system PipeWire.
+- Automatic accent colours based on album art (optional).
+- Advanced client-side dynamic playlists.
+  - Both query-based and sticker-based filtering rules are supported at the same time.
+  - Multiple ordering clauses (or random shuffle on refresh).
+  - Auto-refresh scheduling (hourly, daily, weekly, etc).
+  - Optional fetch limit for things like top-10 playlists.
+  - Graphical rules editor with live error checking.
+  - Save a dynamic playlist's current state as an MPD-side static playlist whenver you want.
+  - JSON import/export for sharing & backing up dynamic playlist rules.
+- Fetch album arts, artist avatars and synced song lyrics from external sources (currently supports Last.fm, MusicBrainz and LRCLIB).
+- myMPD-compatible stickers handling.
 - Integrated MPRIS client with background run supported. The background instance can be reopened via your shell's MPRIS applet, the "Background applications" section in GNOME's quick settings shade (if installed via Flatpak) or simply by launching Euphonica again.
-- Rate albums (requires MPD 0.24+)
-- Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout
-- Browse your library by album, artist and folders with multiselection support
-  - Browsing by genre and other criteria are planned.
-- Playlist browser and editor:
-  - Save current queue as playlist
-  - Create playlists from selected songs or append to existing ones
-  - Rename existing playlists + reorder or remove songs in them
-- Sort albums by name, AlbumArtist or release date (provided you have the tags)
-- Asynchronous search for large collections
-- Configurable multi-artist tag syntax, works with anything you throw at it
+- Rate albums (requires MPD 0.24+) and individual songs.
+- Audio quality indicators (lossy, lossless, hi-res, DSD) for individual songs as well as albums & detailed format printout.
+- Asynchronous search for large collections. The app as a whole should work with any library size (tested with up to 30K songs).
+- Configurable multi-artist tag syntax, works with anything you throw at it.
   - In other words, your artist tags can be pretty messy and Euphonica will still be able to correctly split them into individual artists.
-- Performant album art fetching & display (cached with Stretto)
-- Super-fast, **multithreaded**, **statically-cached** background blur powered by [libblur](https://github.com/awxkee/libblur)'s stack blur implementation.
-  - Completely independent of blur radius in terms of time complexity.
-  - Multithreaded, queued update logic never blocks UI and **only runs when needed** (once _after_ window resizes, once every time album art changes, etc). 
-- Volume knob with dBFS readout support ('cuz why not?)
-- User-friendly configuration UI & GSettings backend
-- MPD passwords are securely stored in your user's login keyring
+- Performant album art fetching & display (LRU-cached to both cut down on disk reads and RAM usage).
+- Volume knob with dBFS readout support ('cuz why not?).
+- User-friendly configuration UI & GSettings backend.
+- MPD passwords are securely stored in your user's login keyring.
 - Commands are bundled into lists for efficient MPD-side processing where possible.
-- Written in Rust so my dumb code can still be quick :)
 
 ## Screenshots
 
 The below were captured with a mix of dark and light modes.
 
-- Recent View[^1]
-  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-36-09" src="https://github.com/user-attachments/assets/026e0fcf-2988-4b26-8407-4d29e03b99e5" />
 
 - Album View[^1]
-  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-49-49" src="https://github.com/user-attachments/assets/df429e18-fba2-421a-b114-3dd40dbb0c0c" />
-
-- UI at different sizes (v0.12+)[^1]
-  ![mini-layouts-v2](https://github.com/user-attachments/assets/b41f5b50-013f-4c3e-952c-4e858f4cc1fa)
+  <img width="1050" height="750" alt="album-view" src="https://github.com/user-attachments/assets/1d87df01-4dea-4a1c-8373-b71d2dd438fc" />
+  
+- UI at different sizes[^1]
+  <img width="1050" height="750" alt="mini-layouts" src="https://github.com/user-attachments/assets/9bf9c836-bb24-49df-8c71-22ede891bc01" />
 
 - Queue View[^1]
-  ![queue-view](https://github.com/user-attachments/assets/b4d213db-13c0-4a33-85b6-cdf227c93d61)
-
-- Visualiser & synced lyrics in action
-  ![lyrics-animation](https://github.com/user-attachments/assets/1de89a90-90bd-4aa2-9775-5c1845d4dcf4)
-  
-- Artist bio as fetched from Last.fm[^1][^2][^3]
-  ![artist-content-view](https://github.com/user-attachments/assets/54161399-1f16-490f-91b9-89b581b28839)
+  <img width="1050" height="750" alt="queue-view" src="https://github.com/user-attachments/assets/2b33ffe9-7639-4eb4-80f4-f95480017f69" />
 
 - Album wiki as fetched from Last.fm[^1][^2]
-  <img width="1122" height="822" alt="Screenshot From 2025-07-23 20-46-02" src="https://github.com/user-attachments/assets/6b030124-7c46-4ac5-8558-d323d3a40d12" />
+  <img width="1050" height="750" alt="album-content-view" src="https://github.com/user-attachments/assets/4f9e0a94-7b4d-410a-882c-abbefe400e24" />
   
-- Playlist Content View[^1]
-  ![playlist-content-view](https://github.com/user-attachments/assets/be9913e7-2378-4374-9a8a-d08512fc1e09)
-  
+- Dynamic Playlist Editor[^1]
+  <img width="1050" height="750" alt="dyn-playlist-editor-view" src="https://github.com/user-attachments/assets/269b2561-5f25-4510-939f-49353c70e4d9" />
+
 - Settings GUI for pretty much everything[^1]
   ![visualiser-customisation](https://github.com/user-attachments/assets/baed1ece-be17-4f39-81b3-df17e1460417)
-  ![image](https://github.com/user-attachments/assets/f1277d5c-d0c4-40c0-81e2-201c581d4e44)
 
 
 [^1]: Actual album arts and artist images have been replaced with random pictures from [Pexels](https://www.pexels.com/). All credits go to the original authors.
 [^2]: Artist bios and album wikis are user-contributed and licensed by Last.fm under CC-BY-SA.
-[^3]: The displayed image has been released into the public domain. More information at [Wikimedia Commons](https://commons.wikimedia.org/wiki/File:Johann_Sebastian_Bach.jpg).
 
 ## Installation
 
@@ -190,12 +179,9 @@ Euphonica requires some preparation before it can be used, especially if you hav
 </details>
 
 ## TODO
-- Support more stickers-based features:
-  - Recently played
-  - Per-song ratings
-  - User-editable album wikis and artist bios
-  - Metadata sync between Euphonica instances (instead of being stored locally)
-  - Should follow existing sticker schemas, such as that proposed by myMPD, where possible.
+- Make client code fully async
+- User-editable album wikis and artist bios
+- Metadata sync between Euphonica instances (instead of being stored locally)
 - Local socket-exclusive features:
   - Library management operations such as tag editing (will require access to the files themselves)
   - Save downloaded album arts and artist avatars directly into the music folders themselves so other instances

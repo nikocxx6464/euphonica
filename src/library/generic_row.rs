@@ -125,7 +125,7 @@ mod imp {
                 "uri" => {
                     if let Ok(name) = value.get::<&str>() {
                         // Keep display name synchronised
-                        if let Some(title) = name.split('/').last() {
+                        if let Some(title) = name.split('/').next_back() {
                             self.title.set_label(title);
                         }
                         self.uri.replace(name.to_string());
@@ -157,7 +157,7 @@ mod imp {
                         // TODO: playlists support
                     } else {
                         self.thumbnail
-                            .set_icon_name(Some(&INodeType::default().icon_name()));
+                            .set_icon_name(Some(INodeType::default().icon_name()));
                         self.replace_queue.set_visible(false);
                         self.append_queue.set_visible(false);
                     }

@@ -22,8 +22,7 @@ fn transform_wikimedia_url(url: &str) -> Option<String> {
     // so this should work fine.
     if let Some(file_name) = url.strip_prefix("https://commons.wikimedia.org/wiki/File:") {
         let transformed_url = format!(
-            "https://commons.wikimedia.org/w/thumb.php?f={}&w=256",
-            file_name
+            "https://commons.wikimedia.org/w/thumb.php?f={file_name}&w=256"
         );
         return Some(transformed_url);
     }
@@ -116,16 +115,13 @@ impl From<Artist> for models::ArtistMeta {
             if let Some(relations) = artist.relations {
                 for relation in relations.into_iter() {
                     if relation.relation_type == "image" || relation.relation_type == "picture" {
-                        match relation.content {
-                            RelationContent::Url(url) => {
-                                if let Some(direct) = transform_wikimedia_url(&url.resource) {
-                                    image.push(ImageMeta {
-                                        size: ImageSize::Large,
-                                        url: direct,
-                                    });
-                                }
+                        if let RelationContent::Url(url) = relation.content {
+                            if let Some(direct) = transform_wikimedia_url(&url.resource) {
+                                image.push(ImageMeta {
+                                    size: ImageSize::Large,
+                                    url: direct,
+                                });
                             }
-                            _ => {}
                         }
                     }
                 }

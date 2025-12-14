@@ -3,7 +3,7 @@ use adw::subclass::prelude::*;
 use glib::{clone, Properties};
 use gtk::{glib, prelude::*, CompositeTemplate};
 
-use crate::{application::EuphonicaApplication, common::INode, utils, window::EuphonicaWindow};
+use crate::{application::EuphonicaApplication, client::state::StickersSupportLevel, common::INode, utils, window::EuphonicaWindow};
 
 use super::SidebarButton;
 
@@ -28,6 +28,12 @@ mod imp {
         pub playlists_btn: TemplateChild<SidebarButton>,
         #[template_child]
         pub recent_playlists: TemplateChild<gtk::ListBox>,
+        #[template_child]
+        pub dyn_playlists_section: TemplateChild<gtk::Box>,
+        #[template_child]
+        pub dyn_playlists_btn: TemplateChild<SidebarButton>,
+        #[template_child]
+        pub recent_dyn_playlists: TemplateChild<gtk::ListBox>,
         #[template_child]
         pub queue_btn: TemplateChild<gtk::ToggleButton>,
         #[template_child]
@@ -89,8 +95,12 @@ impl Sidebar {
     pub fn hide_highlights(&self) {
         let settings = utils::settings_manager().child("ui");
         let recent_playlists_widget = self.imp().recent_playlists.get();
+        let recent_dyn_playlists_widget = self.imp().recent_dyn_playlists.get();
         for idx in 0..settings.uint("recent-playlists-count") {
             if let Some(row) = recent_playlists_widget.row_at_index(idx as i32) {
+                row.set_activatable(false);
+            }
+            if let Some(row) = recent_dyn_playlists_widget.row_at_index(idx as i32) {
                 row.set_activatable(false);
             }
         }
@@ -176,6 +186,21 @@ impl Sidebar {
             .bind("recent-playlists-count", &recent_playlists_model, "size")
             .build();
 
+        self.imp().playlists_btn.connect_toggled(clone!(
+            #[weak]
+            stack,
+            #[weak]
+            playlist_view,
+            move |btn| {
+                if btn.is_active() {
+                    playlist_view.pop();
+                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
+                        stack.set_visible_child_name("playlists");
+                    }
+                }
+            }
+        ));
+
         let recent_playlists_widget = self.imp().recent_playlists.get();
         recent_playlists_widget.bind_model(
             Some(&recent_playlists_model),
@@ -218,8 +243,90 @@ impl Sidebar {
             ),
         );
 
+        let dyn_playlist_view = win.get_dyn_playlist_view();
+        let dyn_playlists = library.dyn_playlists();
+        let recent_dyn_playlists_model = gtk::SliceListModel::new(
+            Some(gtk::SortListModel::new(
+                Some(dyn_playlists.clone()),
+                Some(
+                    gtk::StringSorter::builder()
+                        .expression(gtk::PropertyExpression::new(
+                            INode::static_type(),
+                            Option::<gtk::PropertyExpression>::None,
+                            "last-modified",
+                        ))
+                        .build(),
+                ),
+            )),
+            0,
+            5, // placeholder, will be bound to a GSettings key later
+        );
+        settings
+            .bind("recent-playlists-count", &recent_dyn_playlists_model, "size")
+            .build();
+
+        self.imp().dyn_playlists_btn.connect_toggled(clone!(
+            #[weak]
+            stack,
+            #[weak]
+            dyn_playlist_view,
+            move |btn| {
+                if btn.is_active() {
+                    dyn_playlist_view.pop();
+                    stack.set_visible_child_name("dynamic_playlists");
+                }
+            }
+        ));
+
+        let recent_dyn_playlists_widget = self.imp().recent_dyn_playlists.get();
+        recent_dyn_playlists_widget.bind_model(
+            Some(&recent_dyn_playlists_model),
+            clone!(
+                #[weak]
+                stack,
+                #[weak]
+                dyn_playlist_view,
+                #[weak]
+                split_view,
+                #[weak]
+                recent_btn,
+                #[upgrade_or]
+                SidebarButton::new("ERROR", "dot-symbolic").upcast::<gtk::Widget>(),
+                move |obj| {
+                    let playlist = obj.downcast_ref::<INode>().unwrap();
+                    let btn = SidebarButton::new(playlist.get_uri(), "dot-symbolic");
+                    btn.set_group(Some(&recent_btn));
+                    btn.connect_toggled(clone!(
+                        #[weak]
+                        stack,
+                        #[weak]
+                        dyn_playlist_view,
+                        #[weak]
+                        split_view,
+                        #[weak]
+                        playlist,
+                        move |btn| {
+                            if btn.is_active() {
+                                dyn_playlist_view.on_playlist_clicked(&playlist);
+                                if stack.visible_child_name().is_none_or(|name| name.as_str() != "dynamic_playlists") {
+                                    stack.set_visible_child_name("dynamic_playlists");
+                                }
+                                split_view.set_show_sidebar(!split_view.is_collapsed());
+                            }
+                        }
+                    ));
+                    btn.into()
+                }
+            ),
+        );
+
         self.hide_highlights();
         playlists.connect_items_changed(clone!(
+            #[weak(rename_to = this)]
+            self,
+            move |_, _, _, _| {this.hide_highlights();}
+        ));
+        dyn_playlists.connect_items_changed(clone!(
             #[weak(rename_to = this)]
             self,
             move |_, _, _, _| {this.hide_highlights();}
@@ -232,21 +339,11 @@ impl Sidebar {
             .transform_to(|_, len: u32| Some(len > 0))
             .sync_create()
             .build();
-
-        self.imp().playlists_btn.connect_toggled(clone!(
-            #[weak]
-            stack,
-            #[weak]
-            playlist_view,
-            move |btn| {
-                if btn.is_active() {
-                    playlist_view.pop();
-                    if stack.visible_child_name().is_none_or(|name| name.as_str() != "playlists") {
-                        stack.set_visible_child_name("playlists");
-                    }
-                }
-            }
-        ));
+        recent_dyn_playlists_model
+            .bind_property("n-items", &recent_dyn_playlists_widget, "visible")
+            .transform_to(|_, len: u32| Some(len > 0))
+            .sync_create()
+            .build();
 
         client_state
             .bind_property(
@@ -254,6 +351,17 @@ impl Sidebar {
                 &self.imp().playlists_section.get(),
                 "visible",
             )
+            .sync_create()
+            .build();
+
+        // Dynamic playlists may rely on stickers.
+        client_state
+            .bind_property(
+                "stickers-support-level",
+                &self.imp().dyn_playlists_section.get(),
+                "visible",
+            )
+            .transform_to(|_, lvl: StickersSupportLevel| Some(lvl == StickersSupportLevel::All))
             .sync_create()
             .build();
 
@@ -277,10 +385,12 @@ impl Sidebar {
                 move |_| split_view.set_show_sidebar(!split_view.is_collapsed())
             ));
         for btn in [
+            &self.imp().recent_btn.get(),
             &self.imp().albums_btn.get(),
             &self.imp().artists_btn.get(),
             &self.imp().folders_btn.get(),
             &self.imp().playlists_btn.get(),
+            &self.imp().dyn_playlists_btn.get(),
         ] {
             btn.upcast_ref::<gtk::ToggleButton>()
                 .upcast_ref::<gtk::Button>()
@@ -304,6 +414,7 @@ impl Sidebar {
             "albums" => self.imp().albums_btn.set_active(true),
             "artists" => self.imp().artists_btn.set_active(true),
             "queue" => self.imp().queue_btn.set_active(true),
+            "playlists" => self.imp().playlists_btn.set_active(true),
             _ => unimplemented!(),
         };
     }

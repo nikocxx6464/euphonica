@@ -123,7 +123,7 @@ impl ArtistTag {
                             if !thumb {
                                 return;
                             }
-                            if this.imp().artist.get().unwrap().get_name() == &name {
+                            if this.imp().artist.get().unwrap().get_name() == name {
                                 this.imp().avatar.set_custom_image(Some(&tex));
                             }
                         }
@@ -137,7 +137,7 @@ impl ArtistTag {
                        #[weak(rename_to = this)]
                        res,
                        move |_: CacheState, tag: String| {
-                           if this.imp().artist.get().unwrap().get_name() == &tag {
+                           if this.imp().artist.get().unwrap().get_name() == tag {
                                this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
                            }
                        }

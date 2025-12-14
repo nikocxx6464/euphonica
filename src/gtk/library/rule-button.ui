@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<interface>
+	<requires lib="gtk" version="4.0" />
+	<requires lib="Adw" version="1.0" />
+	<template class="EuphonicaRuleButton" parent="GtkBox">
+		<property name="halign">start</property>
+		<child>
+			<object class="GtkDropDown" id="rule_type">
+				<property name="model">
+					<object class="GtkStringList">
+						<items>
+							<!-- Sticker-based -->
+							<item translatable="yes">Album rating</item>
+							<!-- Query-based -->
+							<item translatable="yes">URI</item>
+							<item translatable="yes">Last modified</item>
+							<item translatable="yes">Any tag</item>
+							<item translatable="yes">Album tag</item>
+							<item translatable="yes">Artist tag</item>
+							<item translatable="yes">AlbumArtist tag</item>
+
+						</items>
+					</object>
+				</property>
+			</object>
+		</child>
+
+		<child>
+			<object class="GtkEntry" id="lhs">
+				<property name="visible">false</property>
+				<property name="halign">start</property>
+			</object>
+		</child>
+
+		<child>
+			<object class="GtkDropDown" id="op">
+				<property name="visible">false</property>
+			</object>
+		</child>
+
+		<child>
+			<object class="GtkEntry" id="rhs">
+				<property name="visible">false</property>
+				<property name="halign">start</property>
+			</object>
+		</child>
+
+		<child>
+			<object class="GtkButton" id="delete">
+				<property name="icon-name">cross-small-symbolic</property>
+			</object>
+		</child>
+		<style>
+			<class name="linked"/>
+		</style>
+    </template>
+</interface>

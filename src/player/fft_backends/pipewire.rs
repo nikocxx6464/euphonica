@@ -204,7 +204,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                                     if props.get("application.name").is_some_and(|name| name == "Music Player Daemon") {
                                         devices_clone.lock().unwrap().push(OutputNode{
                                             node_name: node_name.to_owned(),
-                                            display_name: format!("MPD PipeWire ({})", node_name)
+                                            display_name: format!("MPD PipeWire ({node_name})")
                                         });
                                     } else if props.get("media.class").is_some_and(|mclass| mclass == "Audio/Sink" || mclass == "Stream/Output/Audio") {
                                         println!("Found new PipeWire output node: {}", &node_name);
@@ -250,7 +250,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                     {
                         let devices_lock = devices.lock().unwrap();
                         let mut curr_device = curr_device.lock().unwrap();
-                        if devices_lock.len() > 0 {
+                        if !devices_lock.is_empty() {
                             if let Some(device_idx) = devices_lock.iter().position(|elem| elem.node_name == last_device) {
                                 *curr_device = device_idx as i32;
                             } else {
@@ -372,7 +372,7 @@ impl FftBackendImpl for PipeWireFftBackend {
                             }
                         ))
                         .process(move |stream, user_data| match stream.dequeue_buffer() {
-                            None => {return;},
+                            None => {},
                             Some(mut buffer) => {
                                 let buffer_data = buffer.datas_mut();
                                 if buffer_data.is_empty() {
@@ -500,8 +500,8 @@ impl FftBackendImpl for PipeWireFftBackend {
                         // Copy ringbuffer to our static ones. Take care to read backward from the latest sample.
                         if let Ok(ringbuffers) = samples.lock() {
                             for pos in 0..n_samples {
-                                fft_buf_left[n_samples - pos - 1] = *ringbuffers.0.get_signed(-1 - pos as isize).unwrap_or(&(0.0 as f32));
-                                fft_buf_right[n_samples - pos - 1] = *ringbuffers.1.get_signed(-1 - pos as isize).unwrap_or(&(0.0 as f32));
+                                fft_buf_left[n_samples - pos - 1] = *ringbuffers.0.get_signed(-1 - pos as isize).unwrap_or(&0.0_f32);
+                                fft_buf_right[n_samples - pos - 1] = *ringbuffers.1.get_signed(-1 - pos as isize).unwrap_or(&0.0_f32);
                             }
                         }
                         // These should be applied on-the-fly

@@ -1,4 +1,5 @@
 use std::rc::Rc;
+use std::{cell::Cell, sync::OnceLock};
 
 use adw::prelude::*;
 use adw::subclass::prelude::*;
@@ -7,23 +8,14 @@ use gtk::{
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
 
-use glib::{clone, closure_local, Properties};
+use glib::{clone, closure_local, Properties, WeakRef, subclass::Signal};
 
 use super::{AlbumCell, ArtistCell, Library};
 use crate::{
-    utils::LazyInit,
-    cache::Cache,
-    common::{marquee::MarqueeWrapMode, Album, Artist, Song},
-    library::recent_song_row::RecentSongRow,
-    player::Player,
-    window::EuphonicaWindow
+    cache::Cache, common::{marquee::MarqueeWrapMode, Album, Artist, RowAddButtons, Song, SongRow}, player::Player, utils::LazyInit, window::EuphonicaWindow
 };
 
 mod imp {
-    use std::{cell::{Cell, OnceCell}, sync::OnceLock};
-
-    use glib::subclass::Signal;
-
     use super::*;
 
     #[derive(Debug, CompositeTemplate, Properties, Default)]
@@ -67,12 +59,10 @@ mod imp {
         #[template_child]
         pub song_list: TemplateChild<gtk::ListBox>,
 
-        pub library: OnceCell<Library>,
+        pub library: WeakRef<Library>,
 
         #[property(get, set)]
-        pub collapsed: Cell<bool>,
-
-        pub initialized: Cell<bool>  // Only start fetching content when navigated to for the first time
+        pub collapsed: Cell<bool>
     }
 
     #[glib::object_subclass]
@@ -119,7 +109,7 @@ mod imp {
                 #[weak(rename_to = this)]
                 self,
                 move |_| {
-                    this.library.get().unwrap().clear_recent_songs();
+                    this.library.upgrade().unwrap().clear_recent_songs();
                     this.obj().on_history_changed();
                 }
             ));
@@ -209,17 +199,15 @@ impl RecentView {
 
     pub fn setup(
         &self,
-        library: Library,
-        player: Player,
+        library: &Library,
+        player: &Player,
         cache: Rc<Cache>,
         window: &EuphonicaWindow,
     ) {
         self.imp()
             .library
-            .set(library.clone())
-            .expect("Cannot init RecentView with Library");
+            .set(Some(library));
 
-        self.on_history_changed();
         player.connect_closure(
             "history-changed",
             false,
@@ -238,16 +226,14 @@ impl RecentView {
     }
 
     pub fn on_history_changed(&self) {
-        if self.imp().initialized.get() {
-            let library = self.imp().library.get().unwrap();
-            library.fetch_recent_albums();
-            library.fetch_recent_artists();
-            library.fetch_recent_songs();
-        }
+        let library = self.imp().library.upgrade().unwrap();
+        library.fetch_recent_albums();
+        library.fetch_recent_artists();
+        library.fetch_recent_songs();
     }
 
     fn setup_album_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
-        let album_list = self.imp().library.get().unwrap().recent_albums();
+        let album_list = self.imp().library.upgrade().unwrap().recent_albums();
 
         album_list
             .bind_property(
@@ -285,7 +271,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let album_cell = AlbumCell::new(&item, cache, Some(MarqueeWrapMode::Scroll));
+                let album_cell = AlbumCell::new(item, cache, Some(MarqueeWrapMode::Scroll));
                 // propagating the tallest cell's height to the revealer if said row wasn't
                 // the first initialised.
                 item.set_child(Some(&album_cell));
@@ -350,7 +336,7 @@ impl RecentView {
     }
 
     fn setup_artist_row(&self, window: &EuphonicaWindow, cache: Rc<Cache>) {
-        let artist_list = self.imp().library.get().unwrap().recent_artists();
+        let artist_list = self.imp().library.upgrade().unwrap().recent_artists();
 
         artist_list
             .bind_property(
@@ -385,7 +371,7 @@ impl RecentView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(&item, cache);
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
                 adj.set_value(0.0);
                 adj.set_value(0.0);
@@ -444,7 +430,7 @@ impl RecentView {
     }
 
     fn setup_song_list(&self, cache: Rc<Cache>) {
-        let library = self.imp().library.get().unwrap().clone();
+        let library = self.imp().library.upgrade().unwrap().clone();
         let song_list = library.recent_songs();
 
         song_list
@@ -467,7 +453,23 @@ impl RecentView {
         self.imp().song_list.bind_model(
             Some(&song_list),
             move |obj| {
-                let row = RecentSongRow::new(library.clone(), obj.downcast_ref::<Song>().unwrap(), cache.clone());
+                let song = obj.downcast_ref::<Song>().unwrap();
+                let row = SongRow::new(Some(cache.clone()), None);
+                // Manually bind attributes here
+                row.set_name(song.get_name());
+                row.set_quality_grade(song.get_quality_grade());
+                row.set_first_attrib_icon_name(Some("library-music-symbolic"));
+                row.set_first_attrib_text(song.get_album_title());
+                row.set_second_attrib_icon_name(Some("music-artist-symbolic"));
+                row.set_second_attrib_text(song.get_artist_tag());
+                row.set_third_attrib_icon_name(Some("recent-symbolic"));
+                row.set_third_attrib_text(song.get_last_played_desc().as_deref());
+
+                let end_widget = RowAddButtons::new(&library);
+                end_widget.set_song(Some(song));
+                row.set_end_widget(Some(&end_widget.into()));
+
+                row.on_bind(song);
                 row.into()
             }
         );
@@ -475,15 +477,7 @@ impl RecentView {
 }
 
 impl LazyInit for RecentView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
-        let was_populated = self.imp().initialized.replace(true);
-        if !was_populated {
-            println!("Initialising recents");
-            self.on_history_changed();
-        }
+        self.on_history_changed();
     }
 }

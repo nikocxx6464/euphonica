@@ -116,7 +116,7 @@ impl PlaybackControls {
             move |_| player.cycle_playback_flow()
         ));
         self.imp().prev_btn.connect_clicked(clone!(
-            #[strong]
+            #[weak]
             player,
             move |_| player.prev_song(true)
         ));

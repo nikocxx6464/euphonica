@@ -44,7 +44,7 @@ impl Default for ArtistInfo {
 /// The "exceptions" pass is necessary due to some artist names having delimiter-like
 /// substrings. Examples: the ampersand (&) is a popular delimiter, but then Simon & Garfunkel
 /// exists; likewise, the forward slash (/) is sometimes also used, but what about AC/DC?
-pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
+pub fn parse_mb_artist_tag(input: &str) -> Vec<&str> {
     let mut buffer: String = input.to_owned();
     // println!("Original buffer len: {}", buffer.len());
     if let (Some(exc_ac), Some(delim_ac)) = (
@@ -76,13 +76,13 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
                 return found_artists;
             }
             // Else return the whole string
-            return vec![input];
+            vec![input]
             // Incorrect outputs are due to unspecified delimiters.
         } else {
             // Take note to check for "blankness" using the buffer, but return slices
             // of input, since buffer will go out of scope after this function concludes.
             let first_range = 0..matched_delims[0].start();
-            if buffer.get(first_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
+            if buffer.get(first_range.clone()).is_some_and(|substr| !substr.trim().is_empty()) {
                 if let Some(artist) = input.get(first_range).map(|name| name.trim()) {
                     found_artists.push(artist);
                 }
@@ -90,17 +90,17 @@ pub fn parse_mb_artist_tag<'a>(input: &'a str) -> Vec<&'a str> {
             for i in 1..(matched_delims.len()) {
                 let between_range = matched_delims[i - 1].end()..matched_delims[i].start();
                 // println!("Between: `{between_range:?}`");
-                if buffer.get(between_range.clone()).is_some_and(|substr| substr.trim().len() > 0) {
+                if buffer.get(between_range.clone()).is_some_and(|substr| !substr.trim().is_empty()) {
                     if let Some(artist) = input.get(between_range).map(|name| name.trim()) {
                         found_artists.push(artist);
                     }
                 }
             }
             let last_range = matched_delims.last().unwrap().end().min(buffer.len())..;
-            if buffer[last_range.clone()].trim().len() > 0 {
+            if !buffer[last_range.clone()].trim().is_empty() {
                 found_artists.push(input[last_range].trim());
             }
-            return found_artists;
+            found_artists
         }
     } else {
         vec![input]

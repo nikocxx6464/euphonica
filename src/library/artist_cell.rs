@@ -124,7 +124,7 @@ impl ArtistCell {
                                 return;
                             }
                             if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                                if artist.get_name() == &name {
+                                if artist.get_name() == name {
                                     this.update_avatar(Some(&tex));
                                 }
                             }
@@ -140,7 +140,7 @@ impl ArtistCell {
                        res,
                        move |_: CacheState, tag: String| {
                            if let Some(artist) = this.imp().artist.borrow().as_ref() {
-                               if artist.get_name() == &tag {
+                               if artist.get_name() == tag {
                                    this.imp().avatar.set_custom_image(Option::<gdk::Texture>::None.as_ref());
                                }
                            }

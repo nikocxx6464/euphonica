@@ -64,6 +64,12 @@ glib::wrapper! {
     @implements gtk::Accessible, gtk::Buildable, gtk::ConstraintTarget, gtk::Orientable;
 }
 
+impl Default for ThemeSelector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ThemeSelector {
     pub fn new() -> Self {
         let style = adw::StyleManager::default();

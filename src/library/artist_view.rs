@@ -4,9 +4,11 @@ use gtk::{
     glib,
     CompositeTemplate, ListItem, SignalListItemFactory, SingleSelection,
 };
-use std::{cell::Cell, cmp::Ordering, rc::Rc};
+use std::{cell::Cell, cmp::Ordering, rc::Rc, sync::OnceLock};
 
-use glib::clone;
+use glib::{
+    clone, subclass::Signal, Properties, WeakRef
+};
 
 use super::{ArtistCell, ArtistContentView, Library};
 use crate::{
@@ -17,14 +19,9 @@ use crate::{
 };
 
 mod imp {
-
-    use std::{cell::OnceCell, sync::OnceLock};
-
-    use glib::{subclass::Signal, Properties};
-
     use super::*;
 
-    #[derive(Debug, CompositeTemplate, Properties)]
+    #[derive(Default, Debug, CompositeTemplate, Properties)]
     #[properties(wrapper_type = super::ArtistView)]
     #[template(resource = "/io/github/htkhiem/Euphonica/gtk/library/artist-view.ui")]
     pub struct ArtistView {
@@ -65,43 +62,7 @@ mod imp {
         #[property(get, set)]
         pub collapsed: Cell<bool>,
 
-        pub library: OnceCell<Library>,
-        pub initialized: Cell<bool>
-    }
-
-    impl Default for ArtistView {
-        fn default() -> Self {
-            Self {
-                nav_view: TemplateChild::default(),
-                show_sidebar: TemplateChild::default(),
-                // Search & filter widgets
-                sort_dir: TemplateChild::default(),
-                sort_dir_btn: TemplateChild::default(),
-                // sort_mode: TemplateChild::default(),
-                search_btn: TemplateChild::default(),
-                // search_mode: TemplateChild::default(),
-                search_bar: TemplateChild::default(),
-                search_entry: TemplateChild::default(),
-                // Content
-                grid_view: TemplateChild::default(),
-                content_page: TemplateChild::default(),
-                content_view: TemplateChild::default(),
-
-                // Search & filter models
-                search_filter: gtk::CustomFilter::default(),
-                sorter: gtk::CustomSorter::default(),
-                // Keep last length to optimise search
-                // If search term is now longer, only further filter still-matching
-                // items.
-                // If search term is now shorter, only check non-matching items to see
-                // if they now match.
-                last_search_len: Cell::new(0),
-                collapsed: Cell::new(false),
-
-                library: OnceCell::new(),
-                initialized: Cell::new(false)
-            }
-        }
+        pub library: WeakRef<Library>
     }
 
     #[glib::object_subclass]
@@ -180,8 +141,8 @@ impl ArtistView {
         res
     }
 
-    pub fn setup(&self, library: Library, client_state: ClientState, cache: Rc<Cache>) {
-        self.imp().library.set(library.clone()).expect("Unable to register library with Artist View");
+    pub fn setup(&self, library: &Library, client_state: &ClientState, cache: Rc<Cache>) {
+        self.imp().library.set(Some(library));
         self.setup_sort();
         self.setup_search();
         self.setup_gridview(cache.clone());
@@ -355,7 +316,7 @@ impl ArtistView {
         if self.imp().nav_view.visible_page_tag().is_none_or(|tag| tag.as_str() != "content") {
             self.imp().nav_view.push_by_tag("content");
         }
-        self.imp().library.get().unwrap().init_artist(artist);
+        self.imp().library.upgrade().unwrap().init_artist(artist);
     }
 
     fn setup_gridview(&self, cache: Rc<Cache>) {
@@ -363,7 +324,7 @@ impl ArtistView {
         // Refresh upon reconnection.
         // User-initiated refreshes will also trigger a reconnection, which will
         // in turn trigger this.
-        let artists = self.imp().library.get().unwrap().artists();
+        let artists = self.imp().library.upgrade().unwrap().artists();
         
         // Setup search bar
         let search_bar = self.imp().search_bar.get();
@@ -408,7 +369,7 @@ impl ArtistView {
                 let item = list_item
                     .downcast_ref::<ListItem>()
                     .expect("Needs to be ListItem");
-                let artist_cell = ArtistCell::new(&item, cache);
+                let artist_cell = ArtistCell::new(item, cache);
                 item.set_child(Some(&artist_cell));
             }
         ));
@@ -471,17 +432,9 @@ impl ArtistView {
 }
 
 impl LazyInit for ArtistView {
-    fn clear(&self) {
-        self.imp().initialized.set(false);
-    }
-
     fn populate(&self) {
-        if let Some(library) = self.imp().library.get() {
-            let was_populated = self.imp().initialized.replace(true);
-            if !was_populated {
-                println!("Initialising artists");
-                library.init_artists(false);
-            }
+        if let Some(library) = self.imp().library.upgrade() {
+            library.init_artists(false);
         }
     }
 }

@@ -12,6 +12,7 @@ pub enum INodeType {
     Song,
     Folder,
     Playlist,
+    DynamicPlaylist
 }
 
 impl INodeType {
@@ -19,7 +20,7 @@ impl INodeType {
         match self {
             Self::Folder => "folder-symbolic",
             Self::Song => "music-note-single-symbolic",
-            Self::Playlist => "playlist-symbolic",
+            Self::Playlist | Self::DynamicPlaylist => "playlist-symbolic",
             _ => "paper-symbolic",
         }
     }
@@ -141,7 +142,7 @@ glib::wrapper! {
 impl INode {
     // ALL of the getters below require that the info field be initialised!
     pub fn get_info(&self) -> &INodeInfo {
-        &self.imp().info.get().unwrap()
+        self.imp().info.get().unwrap()
     }
 
     pub fn get_uri(&self) -> &str {
