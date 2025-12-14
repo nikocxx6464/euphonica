@@ -1,4 +1,4 @@
-name: Build Euphonica AArch64 DEB (Unstable Container)
+name: Build Tarball
 
 on:
   workflow_dispatch:
@@ -6,37 +6,33 @@ on:
   
 jobs:
   build_arm64_deb:
-    # 1. Use the ARM runner
     runs-on: ubuntu-24.04-arm 
     
-    # 2. Use the Debian Unstable (sid) container for the newest GTK4
     container:
-      image: debian:sid-slim # Unstable branch for maximum GTK version
+      image: debian:sid-slim
       options: --user root
     steps:
-    - name: ⚙️ Install Build Dependencies (Debian Sid)
+    - name: Install some dependencies
       run: |
         # Update package lists
         apt-get update
         apt-get install sudo git wget curl jq -y
         
-    - name: ⬇️ Checkout Repository
+    - name: Checkout
       uses: actions/checkout@v4
       with:
         repository: 'htkhiem/euphonica'
         submodules: 'recursive'
         
-    - name: 🦀 Install Rust Toolchain
+    - name: Install Rust
       uses: dtolnay/rust-toolchain@stable
       with:
         toolchain: stable
         
-    - name: ⚙️ Install Build Dependencies (Debian Sid)
+    - name: Install build dependencies
       run: |
-        # Update package lists
         apt-get update
         
-        # Install all necessary dependencies (No 'sudo' needed)
         apt-get install -y \
           build-essential \
           git \
@@ -58,66 +54,53 @@ jobs:
           desktop-file-utils \
           libxml2-utils
           
-    - name: 🔨 Configure Meson Build
+    - name: Configure build
       run: |
-        # In a standard Debian environment, PKG_CONFIG_PATH should be correct.
         meson setup build --buildtype=release --prefix=/usr
 
-    - name: 📦 Compile and Stage Install (TRUSTED PACKAGE STAGING)
+    - name: Compile
       run: |
-        # 1. Create the absolute staging directory
         mkdir -p /package
         
-        # 2. Compile the project
         ninja -C build
         
-        # 3. Run the meson install command, targeting the absolute path /package
-        # This installs the vast majority of files (desktop, icons, etc.)
         DESTDIR=/package meson install -C build
         
-        # --- START OF BACKUP SOLUTION trademark: TARGETED FIXES ---
         
-        # 4. BACKUP: Capture the main executable (euphonica)
         if [ ! -f /package/usr/bin/euphonica ]; then
-          echo "WARNING: Binary missing from /package/usr/bin/. Attempting manual copy..."
+          echo "Binary missing from /package/usr/bin/. Attempting manual copy..."
           COMPILED_BINARY=$(find build -name "euphonica" -type f -executable | head -n 1)
           if [ -f "$COMPILED_BINARY" ]; then
             mkdir -p /package/usr/bin
             cp "$COMPILED_BINARY" /package/usr/bin/
-            echo "SUCCESS: Binary manually copied."
+            echo "SUCCESS!"
           else
-            echo "ERROR: Compiled binary not found! Exiting."
+            echo "Uh oh! Compiled binary not found! Exiting."
             exit 1
           fi
         fi
         
-        # 5. BACKUP: Capture the missing GResource file (euphonica.gresource)
-        # This file MUST be present to resolve the "Failed to open file" panic.
         if [ ! -f /package/usr/share/euphonica/euphonica.gresource ]; then
-          echo "WARNING: GResource file missing. Attempting manual copy..."
+          echo "Uh oh! GResource file missing! Attempting manual copy..."
           
-          # Reliably find the resource file in the build output
           GRESOURCE_FILE=$(find build -name "euphonica.gresource" | head -n 1)
           
           if [ -f "$GRESOURCE_FILE" ]; then
-            # Copy the GResource file into the absolute staging path
             mkdir -p /package/usr/share/euphonica
             cp "$GRESOURCE_FILE" /package/usr/share/euphonica/
             echo "SUCCESS: GResource file manually copied."
           else
-            echo "ERROR: euphonica.gresource resource file not found! Exiting."
+            echo "Wuh oh! euphonica.gresource resource file not found! Exiting."
             exit 1
           fi
         fi
-        # --- END OF BACKUP SOLUTION trademark ---
 
-    - name: 🎁 Create Deployable Tarball
+    - name: Create tarball
       run: |
-        # ARCHIVE THE ENTIRE CONTENTS OF THE ABSOLUTE STAGING FOLDER /package
-        tar -czvf euphonica-arm64-deploy.tar.gz -C /package .
+        tar -czvf euphonica-arm64.tar.gz -C /package .
         
-    - name: ⬆️ Upload Artifact (Tarball)
+    - name: Upload Tarball
       uses: actions/upload-artifact@v4
       with:
-        name: euphonica-arm64-deploy-tarball
+        name: euphonica-tarball
         path: euphonica-arm64-deploy.tar.gz
