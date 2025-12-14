@@ -103,4 +103,4 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: euphonica-tarball
-        path: euphonica-arm64-deploy.tar.gz
+        path: euphonica-arm64.tar.gz
